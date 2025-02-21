@@ -9,6 +9,7 @@ from datetime import date
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import calendar
+from datetime import datetime, timedelta
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -103,6 +104,9 @@ class FinanceTracker(tk.Tk):
         
         self.showMainFrame(start_fresh=False)
         self.selectFilesAndFolders(reload=True)
+        
+        #self.showMonthlyBreakdown()
+        #self.destroy()
         return
     
     def startFresh(self, on_start=False):
@@ -115,7 +119,7 @@ class FinanceTracker(tk.Tk):
         self.expenses_data  = pd.DataFrame()
         self.starting_data  = pd.DataFrame()
         
-        self.date_range = [date(2024, 1, 1),    date(2024, 12, 31)]
+        self.date_range = [date(2024, 1, 1),    date(2050, 12, 31)]
         self.new_date_range = self.date_range.copy()
         self.amount_range = [[0, 1e8], [0, 1e8]]
         self.new_amount_range = self.amount_range.copy()
@@ -125,6 +129,8 @@ class FinanceTracker(tk.Tk):
         self.new_categories = self.categories.copy()
         
         self.last_saved_file = os.path.join(os.path.dirname(__file__), "lastSavedFile.txt")
+           
+        self.switch_montly_order = False
         
         # For formatting consistency
         
@@ -134,7 +140,7 @@ class FinanceTracker(tk.Tk):
         if on_start == False:
             self.clearMainFrame()
             self.selectFilesAndFolders(reload=False)
-            
+             
         return
       
     def onClose(self):
@@ -147,40 +153,62 @@ class FinanceTracker(tk.Tk):
         
     def goodLookingTables(self, table_tree):
         """Make any table look good from treeview"""
-        
         table_tree.configure("Treeview", rowheight=25, font=(self.font_type, self.font_size))  # Set row height and font
         table_tree.configure("Treeview.Heading", font=(self.font_type, self.font_size+1, "bold"))  # Bold headers
-        table_tree.map("Treeview", background=[("selected", "#cce5ff")])  # Highlight selected row
+        table_tree.map("Treeview", background=[("selected", "#cce5ff"), ("active", "#3A70C2")])  # Highlight selected row
         
         return
+    
+    def clearTreeview(self, tree):
+        """Removes all items from a Treeview."""
+        tree.delete(*tree.get_children())
         
     def showMonthlyBreakdown(self, event=None):
         """Show Accounts section."""
         
-        def loadInitialBalances():
-            """Load the csv file that contains initial account balances"""
-            filetypes = [("Pickle Files", "*.pkl"),
-                             ("CSV Files", "*.csv")]
+        def generateMonthYearList(start_date: datetime, end_date: datetime):
+            """
+            Generate a list of (month, year) tuples between two datetime objects.
             
-            filetypes = filetypes[::-1]
-                
-            #data_file = filedialog.askopenfilename(title="Select Files", filetypes=filetypes)
-            data_file = 'C:/Users/Admin/OneDrive/Desktop/Documents/Budget/TEST/Account Values.csv'
+            :param start_date: The starting datetime object
+            :param end_date: The ending datetime object
+            :return: List of tuples in the format (month, year)
+            """
+            current_date = datetime(start_date.year, start_date.month, 1)
+            end_date = datetime(end_date.year, end_date.month, 1)
             
-            try:
-                df = pd.read_csv(data_file).fillna(0)
-                df['Starting Balance'] = df['Starting Balance'].apply(lambda x: x*100)
-            except FileNotFoundError:
-                return pd.DataFrame()
+            month_year_list = []
+        
+            while current_date <= end_date:
+                month_year_list.append((current_date.month, current_date.year))
+                # Move to the next month
+                if current_date.month == 12:
+                    current_date = datetime(current_date.year + 1, 1, 1)
+                else:
+                    current_date = datetime(current_date.year, current_date.month + 1, 1)
+        
+            return month_year_list
+        
+        def formatMonthYear(month, year):
+            """
+            Convert a month and year into the format 'Mon 'YY'.
             
-            return df
+            :param month: The month as an integer (1-12)
+            :param year: The year as an integer
+            :return: A string in the format 'Mon 'YY'
+            """
+            return datetime(year, month, 1).strftime("%b '%y")
             
         def monthlyBalances():
-            initial_balances = loadInitialBalances()  # Should return a DataFrame with account names and starting balances
             
-            if initial_balances.empty:
-                return
-            
+            def computeMonthlyTotals(df):
+                """Compute total amounts per account per month using groupby & Grouper."""
+                df = df.copy()  # Avoid modifying the original DataFrame
+                df["Date"] = pd.to_datetime(df["Date"])  # Ensure Date column is in datetime format
+                df.set_index("Date", inplace=True)  # Set Date as the index
+                val = (df.groupby([pd.Grouper(freq="ME"), "Account"])["Amount"].sum().unstack(fill_value=0))
+                return val
+
             inc, exp = self.income_data.copy(), self.expenses_data.copy()
         
             # Get unique account names and group them by type
@@ -199,17 +227,6 @@ class FinanceTracker(tk.Tk):
                     if acc in account.upper():
                         account_types[acc].append(account)
                         break
-
-            def computeMonthlyTotals(df):
-                """Compute total amounts per account per month using groupby & Grouper."""
-                df = df.copy()  # Avoid modifying the original DataFrame
-                df["Date"] = pd.to_datetime(df["Date"])  # Ensure Date column is in datetime format
-                df.set_index("Date", inplace=True)  # Set Date as the index
-                return (
-                    df.groupby([pd.Grouper(freq="ME"), "Account"])["Amount"]
-                    .sum()
-                    .unstack(fill_value=0)  # Pivot table: rows=month, cols=account
-                )
         
             income_monthly_totals = computeMonthlyTotals(inc)
             expenses_monthly_totals = computeMonthlyTotals(exp)
@@ -218,19 +235,12 @@ class FinanceTracker(tk.Tk):
             account_summary = pd.DataFrame(columns=["Account"] + months)
             
             # Networth list by month
-            networth = np.zeros((12))
-            
+            networth = np.zeros((len(months)))
+
             for acc_type, accounts in account_types.items():
                 for account in accounts:
                     
-                    #acc_index = initial_balances["Account"] == account
-                    #initial_value = list(initial_balances['Starting Balance'][acc_index])
-                    initial_value_list = initial_balances.loc[initial_balances["Account"] == account, "Starting Balance"].tolist()
-                    
-                    try:
-                        initial_value = initial_value_list[0]
-                    except:
-                        initial_value = 0.00
+                    initial_value = initial_balances[account].tolist()[0]
                                               
                     # Compute cumulative end-of-month balance
                     balance_series = initial_value + (
@@ -243,24 +253,23 @@ class FinanceTracker(tk.Tk):
                     account_summary.loc[len(account_summary)] = row
                     
                     networth += np.asarray(monthly_balances)
-                                     
                     
                 # Add a totals row for each account type
                 if len(accounts) > 0:
                     totals_row = ["TOTAL " + acc_type] + list(account_summary.iloc[-len(accounts):].drop(columns=["Account"]).sum(axis=0))
                     account_summary.loc[len(account_summary)] = totals_row
                 else:
-                    totals_row = ["TOTAL " + acc_type] + [0 for _ in range(12)]
+                    totals_row = ["TOTAL " + acc_type] + [0 for _ in range(len(months))]
                     account_summary.loc[len(account_summary)] = totals_row
             
                 # Add a break row (empty)
-                account_summary.loc[len(account_summary)] = [""] + ["" for _ in range(12)]
+                account_summary.loc[len(account_summary)] = [""] + ["" for _ in range(len(months))]
             
             account_summary.loc[len(account_summary)] = ["TOTAL NETWORTH"] + networth.tolist()
 
-            return account_summary, initial_balances
+            return account_summary
         
-        def displayAccountSummary(account_summary, inc, exp, initial_balances):
+        def displayAccountSummary(account_summary, initial_balances, months, ):
             """Display financial data """
             
             def showMonthBreakdown(month_name):
@@ -269,42 +278,36 @@ class FinanceTracker(tk.Tk):
                 # Precompute monthly transactions using `groupby`
                 def computeMonthlyStats(df):
                     """Compute account statistics for the selected month."""
-                    filtered_df = df[pd.to_datetime(df["Date"]).dt.month == month_index+1]
+                    filtered_df = df[pd.to_datetime(df['Date']).dt.year == year]
+                    filtered_df = filtered_df[pd.to_datetime(filtered_df["Date"]).dt.month == month]
                     return filtered_df
                 
-                def getStartingBalance(account, month_index):
-                    """Retrieve the starting balance of an account for a given month."""                    
-                    if month_index == 0:
-                        try:
-                            val = initial_balances.loc[initial_balances['Account'] == account]['Starting Balance'].values[0]
-                        except:
-                            val = 0.0
+                def getStartingBalance(account, month, year):
+                    """Retrieve the starting balance of an account for a given month.""" 
+                    if month == self.date_range[0].month and year == self.date_range[0].year:
+                        return initial_balances[account].tolist()[0]
                     else:
-                        try:
-                            val = account_summary.loc[account_summary["Account"] == account][months[month_index-1]].values[0]
-                        except:
-                            val = 0.0
+                        if month == 1:
+                            m, y = 12, year-1
+                        else:
+                            m, y = month-1, year
                             
-                    return val
-                    
-    
-                # If the clicked column is "Account", do nothing
-                if month_name == "Account":
-                    return
+                        return account_summary.loc[account_summary["Account"] == account][(m, y)].tolist()[0]
             
                 # Determine the index of the selected month
-                month_index = months.index(month_name)
+                month, year = month_name[0], month_name[1]
             
                 # Create a popup window
                 top = tk.Toplevel(self)
-                top.title(f"{month_name} Account Breakdown")
+                text = formatMonthYear(month, year)
+                top.title(f"{text} Account Breakdown")
             
                 # Create a Treeview for displaying breakdown data
                 tree = ttk.Treeview(top, columns=["Account", "Start Balance", "Total Income", "Total Expenses", 
                                       "Net Cash Flow", "Ending Balance", "Savings Rate (%)"], 
                         show="headings", selectmode="none")
                 
-                # Apply standard formatting for tablen
+                # Apply standard formatting for table
                 style = ttk.Style()
                 self.goodLookingTables(style)
             
@@ -323,8 +326,8 @@ class FinanceTracker(tk.Tk):
                     tree.column(col, width=width, anchor=tk.E if col != "Account" else tk.W, stretch=tk.NO)
             
                 # Compute min/max/transaction counts
-                income_totals       = computeMonthlyStats(inc)
-                expense_totals     = computeMonthlyStats(exp)
+                income_totals       = computeMonthlyStats(self.income_data.copy())
+                expense_totals     = computeMonthlyStats(self.expenses_data.copy())
             
                 # Iterate over accounts and compute values
                 count = 0
@@ -345,13 +348,11 @@ class FinanceTracker(tk.Tk):
                         net_cash_flow = total_inc - total_exp
                         
                         # Get starting and ending balances
-                        start_balance = getStartingBalance(account, month_index)
+                        start_balance = getStartingBalance(account, month, year)
                         end_balance   = start_balance + net_cash_flow
     
                         # Get savings rate
-                        savings_rate = (net_cash_flow / start_balance * 100) if total_inc != 0 and start_balance != 0 else "N/A"
-                
-                        
+                        savings_rate = (net_cash_flow / start_balance * 100) if total_inc != 0 and start_balance != 0 else "N/A"                        
                         
                         # Format and insert data
                         tree.insert("", 
@@ -392,64 +393,158 @@ class FinanceTracker(tk.Tk):
                
                 return                
     
-            # Create the Treeview Table
-            frame = ttk.Frame(self.main_frame)
-            frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
-        
-            tree = ttk.Treeview(frame, columns=["Account"] + months, show="headings", selectmode="none")
+            def showAccountBreakdown(account):
+                """a"""
+                
+                # If the clicked column is "Account", do nothing
+                if account == "Account":
+                    return
+                
+                # Create a popup window
+                top = tk.Toplevel(self)
+                top.title(f"{account} Breakdown")
             
+                # Create a Treeview for displaying breakdown data
+                tree = ttk.Treeview(top, columns=["Account", "Start Balance", "Total Income", "Total Expenses", 
+                                      "Net Cash Flow", "Ending Balance", "Savings Rate (%)"], 
+                        show="headings", selectmode="none")
+                
+                # Apply standard formatting for tablen
+                style = ttk.Style()
+                self.goodLookingTables(style)
+            
+                return
+            
+            def addToTreeView(tree, account_summary):
+                # Reapply column headings
+                for col in months:
+                    text = formatMonthYear(col[0], col[1])  # Format 'Mon 'YY'
+                    tree.heading(col, text=text, anchor=tk.CENTER, command=lambda c=col: showMonthBreakdown(c))
+                    tree.column(col, width=column_widths.get(col, 100), anchor=tk.E, stretch=tk.NO)  # Adjust width
+            
+                # Repopulate Treeview with new month order
+                for i, row in account_summary.iterrows():
+                    tmp_row = row.tolist()
+                    if self.switch_montly_order:
+                        tmp_row = [tmp_row[0]] + tmp_row[::-1][:-1]
+                    formatted_row = [f"${val/100.:,.2f}" if isinstance(val, (int, float)) else val for val in tmp_row]
+                    
+                    # Alternating row colors
+                    tag = "oddrow" if i % 2 == 0 else "evenrow"
+                    if "TOTAL" in row['Account']:
+                        tag = "totalrow"
+
+                    # Insert into both Treeviews
+                    account_tree.insert("", tk.END, values=[row["Account"]], tags=(tag,))
+                    tree.insert("", tk.END, values=formatted_row[1:], tags=(tag,))
+                    
+                return i
+            
+            def switchOrder():
+                """Toggle month order and refresh the table without reloading the UI."""
+                self.switch_montly_order = not self.switch_montly_order  # Toggle order
+                
+                # Reverse months order if needed
+                months = generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
+                if self.switch_montly_order:
+                    months.reverse()
+                
+                # Clear the Treeview contents but keep UI intact
+                self.clearTreeview(tree)  
+                self.clearTreeview(account_tree)
+                
+                # Update column headers to match the new order
+                tree["columns"] = months  # Set new order of columns
+                
+                __annotations__ = addToTreeView(tree, account_summary)
+                
+                return
+            
+            # Create the Treeview Table
+            table_frame = ttk.Frame(self.main_frame)
+            table_frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+        
             # Define column widths
             window_width = 160
             column_widths = {"Account": 160}  # Wider for account names
             for month in months:
                 column_widths[month] = 110  # Increase width for readability
                 window_width += 110
-        
-            # Set column headings, widths, and alignment
-            for col in ["Account"] + months:
-                tree.heading(col, text=col, anchor=tk.CENTER, command=lambda c=col: showMonthBreakdown(c))  # Centered headers
-                width = column_widths.get(col, 100)
-                tree.column(col, width=width, anchor=tk.E if col != "Account" else tk.W, stretch=tk.NO)  # Right-align numbers
-        
+    
+            # Create a separate Treeview for the Account column
+            account_tree = ttk.Treeview(table_frame, columns=["Account"], show="headings", selectmode="none", height=15)
+            account_tree.heading("Account", text="Account", anchor=tk.W, command=lambda: switchOrder())
+            account_tree.column("Account", width=160, anchor=tk.W, stretch=tk.NO)
+            account_tree.pack(side=tk.LEFT, fill=tk.Y)
+    
+            # Create a frame for the main Treeview and scrollbar
+            data_frame = ttk.Frame(table_frame)
+            data_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    
+            # Scrollbar for horizontal scrolling
+            x_scroll = ttk.Scrollbar(data_frame, orient=tk.HORIZONTAL)
+            x_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+    
+            # Main Treeview (for months)
+            tree = ttk.Treeview(
+                data_frame, 
+                columns=months, 
+                show="headings", 
+                selectmode="none", 
+                xscrollcommand=x_scroll.set,
+                height=15
+            )
+    
+            # Link scrollbar
+            x_scroll.config(command=tree.xview)
+            
             # Apply standard formatting for table
             style = ttk.Style()
             self.goodLookingTables(style)
-            
-            # Insert data into the Treeview with row formatting
-            for i, row in account_summary.iterrows():
-                formatted_row = [f"${val/100.:,.2f}" if isinstance(val, (int, float)) else val for val in row.tolist()]
-        
-                # Alternating row colors for readability
-                tag = "oddrow" if i % 2 == 0 else "evenrow"
-                if "TOTAL" in row['Account']:
-                    tag = "totalrow"
-                    
-                tree.insert("", tk.END, values=formatted_row, tags=(tag,))
-                
-            window_height = i*30
-            window_width = int(window_width * 1.03)
-            geom = str(window_width) + "x" + str(window_height)
-            self.geometry(geom)
-        
+    
+            i = addToTreeView(tree, account_summary)
+    
             # Apply row styles
-            tree.tag_configure("oddrow", background="#f9f9f9")  # Light gray
-            tree.tag_configure("evenrow", background="#ffffff")  # White
-            tree.tag_configure("totalrow", font=(self.font_type, self.font_size, "bold"), background="#e6f2ff")  # Light blue for totals
-
+            for t in (tree, account_tree):
+                t.tag_configure("oddrow", background="#f9f9f9")  # Light gray
+                t.tag_configure("evenrow", background="#ffffff")  # White
+                t.tag_configure("totalrow", font=(self.font_type, self.font_size, "bold"), background="#e6f2ff")  # Light blue for totals
+    
             tree.pack(expand=True, fill=tk.BOTH)
-        
+    
+            # Mouse wheel scrolling - improves speed
+            def on_mouse_wheel(event):
+                if event.state & 0x0001:  # Shift key pressed (for horizontal scroll)
+                    tree.xview_scroll(int(-1 * (event.delta / 10)), "units")
+                else:  # Default vertical scroll
+                    account_tree.yview_scroll(int(-1 * (event.delta / 60)), "units")
+                    tree.yview_scroll(int(-1 * (event.delta / 20)), "units")
+    
+            # Bind mouse scrolling events
+            tree.bind("<MouseWheel>", on_mouse_wheel)
+            account_tree.bind("<MouseWheel>", on_mouse_wheel)
+    
+            # Keep the window size dynamic
+            window_height = i * 32
+            window_width = min(int(window_width * 1.03), 1200)
+            self.geometry(f"{window_width}x{window_height}")
+            self.resizable(True, False)
+            
             return
         
         self.clearMainFrame()
         
         # Define months for table columns
-        months = [calendar.month_abbr[month] for month in range(1,13)]
+        months = generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
+        
+        # Get initial balances
+        initial_balances = self.starting_data.copy()
         
         # Load initial balances from a file
-        account_summary, initial_balances = monthlyBalances()
-            
+        account_summary = monthlyBalances()
+        
         # Display the datatable
-        displayAccountSummary(account_summary, self.income_data.copy(), self.expenses_data.copy(), initial_balances)
+        displayAccountSummary(account_summary, initial_balances, months, )
         
         return
         
@@ -540,6 +635,8 @@ class FinanceTracker(tk.Tk):
             entry.grid(row=i + 1, column=1, padx=10, pady=5, sticky="w")
     
             entry_widgets[account] = entry
+            
+            print (i, account)
     
         # Function to save changes
         def saveChanges(event=None):
@@ -560,7 +657,7 @@ class FinanceTracker(tk.Tk):
             top.destroy()
             
         window_width = 320
-        window_height = len(self.accounts) * 50
+        window_height = (len(self.accounts)+1) * 45
         geom = str(window_width) + "x" + str(window_height)
         top.geometry(geom)
         
@@ -623,7 +720,6 @@ class FinanceTracker(tk.Tk):
                         else:
                             date    = df['Transaction Date'][i]
 
-
                         description = df['Description'][i]
                         amount      = df['Amount'][i]
                         
@@ -658,8 +754,15 @@ class FinanceTracker(tk.Tk):
                         expenses['Amount'].append(abs(float(debit)))
                         expenses['Account'].append(file_name.replace(".csv",""))
                         expenses['Category'].append('')
+                    
+                expenses = pd.DataFrame(expenses)
+                income   = pd.DataFrame(income)
+                
+                # Change all amounts to cents for float handling
+                expenses['Amount']  = (expenses["Amount"] * 100).round().astype(int)
+                income['Amount']    = (income["Amount"] * 100).round().astype(int)
         
-                return pd.DataFrame(expenses), pd.DataFrame(income)
+                return expenses, income
                     
             except Exception as e:
                 messagebox.showinfo(message = f"CSV file {file} not read. \n\n Error {e}")
@@ -743,7 +846,7 @@ class FinanceTracker(tk.Tk):
         
         def removeEmptyAmounts(df):
             """Remove all rows with 0.00 in the amounts column"""
-            return df[df['Amount'] != 0]
+            return df[df['Amount'] != 0].reset_index(drop=True)
         
         def getMinMaxVals(df):
             """Calculate the minimum and maximum values of a dataframe"""
@@ -781,7 +884,7 @@ class FinanceTracker(tk.Tk):
             self.date_range[1] = expenses_end_date
         else:
             self.date_range[0]  = min(income_start_date, expenses_start_date)
-            self.date_range[1]  = min(income_end_date, expenses_end_date)
+            self.date_range[1]  = max(income_end_date, expenses_end_date)
         
         self.new_date_range = self.date_range.copy() 
         
@@ -793,11 +896,11 @@ class FinanceTracker(tk.Tk):
         income_min, income_max      = getMinMaxVals(self.income_data)
         expenses_min, expenses_max  = getMinMaxVals(self.expenses_data)
         
-        self.amount_range[0][0] = income_min
-        self.amount_range[0][1] = income_max
+        self.amount_range[0][0] = income_min / 100.
+        self.amount_range[0][1] = income_max / 100.
         
-        self.amount_range[1][0] = expenses_min
-        self.amount_range[1][1] = expenses_max
+        self.amount_range[1][0] = expenses_min / 100.
+        self.amount_range[1][1] = expenses_max / 100.
         
         self.new_amount_range = self.amount_range.copy()
         
@@ -810,10 +913,6 @@ class FinanceTracker(tk.Tk):
         # Fill in empty entries in the Category column 
         self.income_data["Category"] = self.income_data["Category"].replace(["", None, np.nan], "Not Assigned")
         self.expenses_data["Category"] = self.expenses_data["Category"].replace(["", None, np.nan], "Not Assigned")
-        
-        # Change all amounts to cents for float handling
-        self.income_data["Amount"] = (self.income_data["Amount"] * 100).round().astype(int)
-        self.expenses_data["Amount"] = (self.expenses_data["Amount"] * 100).round().astype(int)
         
         # Generate the dataframe of starting balances
         if self.starting_data.empty:
@@ -870,37 +969,47 @@ class FinanceTracker(tk.Tk):
         def showTable(df, df_name):
             """Display a table for the given dataframe in the main window with an editable 'Category' column."""
 
-            frame = ttk.Frame(self.main_frame)
-            frame.pack(expand=True, fill=tk.BOTH)
-              
+            # Create a frame with padding for aesthetics
+            frame = ttk.Frame(self.main_frame, padding=5)
+            frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+        
             columns = list(df.columns)
             tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse")
-            
-            # Define preset column widths (adjust as needed)
+        
+            # Define preset column widths
             column_widths = {
                 "Index": 70,
                 "Date": 120,
-                "Description": 500,
-                "Amount": 100,
-                "Account": 125,
-                "Category": 125
+                "Description": 450,
+                "Amount": 110,
+                "Account": 150,
+                "Category": 150
             }
+            
+            style = ttk.Style()
+            self.goodLookingTables(style)
         
             # Define column headings
             for col in columns:
                 tree.heading(col, text=col, command=lambda c=col: self.sortIncExpTable(tree, c, df, 0))
-                width = column_widths.get(col, 100)
-                tree.column(col, anchor=tk.W, width=width, stretch=tk.NO)
+                width = column_widths.get(col, 120)
+                tree.column(col, anchor=tk.W if col != "Amount" else tk.E, width=width, stretch=tk.NO)
+        
+            # Apply alternating row colors
+            tree.tag_configure("oddrow", background="#f5f5f5")
+            tree.tag_configure("evenrow", background="#ffffff")
         
             # Populate Treeview with data
             for i, row in df.iterrows():
                 values = list(row)
-                values[3] = f"${values[3]/100:.2f}"
-                tree.insert('', tk.END, values=values)
+                values[3] = f"${values[3]/100:.2f}"  # Format amount as currency
+                tag = "oddrow" if i % 2 == 0 else "evenrow"
+                tree.insert('', tk.END, values=values, tags=(tag,))
         
             tree.pack(expand=True, fill=tk.BOTH)
-        
-            cat_list, cat_file = self.getCategoryTypes(df_name)        
+
+            # Get category list
+            cat_list, cat_file = self.getCategoryTypes(df_name)    
         
             def on_cell_click(event):
                 """Open a dropdown menu when clicking on a 'Category' cell."""
@@ -972,8 +1081,8 @@ class FinanceTracker(tk.Tk):
             for account in accounts:
                     
                 # Filter income and expenses per account
-                income_by_date = inc[inc["Account"] == account].groupby("Date")["Amount"].sum()
-                expenses_by_date = exp[exp["Account"] == account].groupby("Date")["Amount"].sum()
+                income_by_date = inc[inc["Account"] == account].groupby("Date")["Amount"].sum() / 100.
+                expenses_by_date = exp[exp["Account"] == account].groupby("Date")["Amount"].sum() / 100.
                 
                 # Error handling incase one of the dataframes is empty
                 if income_by_date.empty and expenses_by_date.empty:
@@ -990,7 +1099,7 @@ class FinanceTracker(tk.Tk):
                 expenses_by_date = expenses_by_date.reindex(all_dates, fill_value=0)
             
                 # Compute net cash flow (Income - Expenses) and cumulative sum
-                net_cash_flow = (income_by_date - expenses_by_date).cumsum()# + self.starting_data[account].values[0] / 100.
+                net_cash_flow = (income_by_date - expenses_by_date).cumsum() + self.starting_data[account].values[0] / 100.
                 
                 #TODO Figure out why plot is sooooo large
             
@@ -1020,6 +1129,8 @@ class FinanceTracker(tk.Tk):
         
         self.clearMainFrame()
         
+        self.geometry("1200x1000")
+        
         expenses_label = ttk.Label(self.main_frame, text="Expenses", font=("Arial", 12, "bold"))
         expenses_label.pack()
         showTable(exp.copy(), 'exp')
@@ -1027,6 +1138,7 @@ class FinanceTracker(tk.Tk):
         income_label = ttk.Label(self.main_frame, text="Income", font=("Arial", 12, "bold"))
         income_label.pack()
         showTable(inc.copy(), 'inc')
+        
         
         showTimeSeriesPlot(inc.copy(), exp.copy())
         
@@ -1063,7 +1175,7 @@ class FinanceTracker(tk.Tk):
         
         for r, ranges in enumerate([False, self.new_date_range, False, self.new_amount_range]):
             if ranges:
-                col = inc_data_copy.columns[r]   
+                col = inc_data_copy.columns[r] 
             
                 if r != 3:
                     inc_data_copy = inc_data_copy[inc_data_copy[col].between(ranges[0], ranges[1])]
@@ -1077,7 +1189,7 @@ class FinanceTracker(tk.Tk):
                 col = inc_data_copy.columns[r+v+1]
                 inc_data_copy = inc_data_copy[inc_data_copy[col].isin(values)]
                 exp_data_copy = exp_data_copy[exp_data_copy[col].isin(values)]
-                
+        
         self.displayIncExpTables(inc_data_copy, exp_data_copy)
         
         return
@@ -1152,115 +1264,201 @@ class FinanceTracker(tk.Tk):
             top.bind("<Escape>", exitWindow)
             
             start_cal.focus_set()
+            
+            return
         
         def showAmountFilter(df, df_name=None):
-            """Open a window with a slider and entry fields to filter data based on the 'Amount' column."""
+            """Open a modern window to filter data based on the 'Amount' column."""
             
             if df_name == 'inc':
                 min_amount, max_amount = self.amount_range[0]
             else:
                 min_amount, max_amount = self.amount_range[1]
         
+            # Create the modern-styled Toplevel window
             top = tk.Toplevel(self)
             top.title("Select Amount Range")
-            top.geometry("200x125")
+            top.geometry("320x200")  # Balanced sizing
             top.resizable(False, False)
+            top.configure(bg="#f8f9fa")  # Light modern background
         
-            label = ttk.Label(top, text="Enter Amount Range:")
-            label.grid(row=0, column=0, columnspan=2, pady=5)  # Centered label
-            
+            # Frame to hold the content
+            container = ttk.Frame(top, padding=15)
+            container.pack(expand=True, fill=tk.BOTH)
+        
+            # Title Label
+            title_label = ttk.Label(container, text="Enter Amount Range", font=(self.font_type, self.font_size + 1, "bold"))
+            title_label.pack(pady=(5, 10))
+        
+            # Create a sub-frame for label/entry alignment
+            input_frame = ttk.Frame(container)
+            input_frame.pack(pady=5, fill="x")
+        
             # Min Value Entry
-            min_label = ttk.Label(top, text="Minimum Amount:")
-            min_label.grid(row=1, column=0, padx=5, sticky="e")  # Align label to right
-            min_entry = ttk.Entry(top, width=10)
+            min_label = ttk.Label(input_frame, text="Minimum Amount:", font=(self.font_type, self.font_size))
+            min_label.grid(row=0, column=0, padx=(0, 10), sticky="e")
+            min_entry = ttk.Entry(input_frame, width=14, font=(self.font_type, self.font_size))
             min_entry.insert(0, f"{min_amount:.2f}")  # Pre-fill with min amount
-            min_entry.grid(row=1, column=1, padx=5, sticky="w")  # Align entry to left
-            
-            # Max Value Entry
-            max_label = ttk.Label(top, text="Maximum Amount:")
-            max_label.grid(row=2, column=0, padx=5, sticky="e")  # Align label to right
-            max_entry = ttk.Entry(top, width=10)
-            max_entry.insert(0, f"{max_amount:.2f}")  # Pre-fill with max amount
-            max_entry.grid(row=2, column=1, padx=5, sticky="w")  # Align entry to left
+            min_entry.grid(row=0, column=1, padx=(0, 10), sticky="w")
         
+            # Max Value Entry
+            max_label = ttk.Label(input_frame, text="Maximum Amount:", font=(self.font_type, self.font_size))
+            max_label.grid(row=1, column=0, padx=(0, 10), sticky="e")
+            max_entry = ttk.Entry(input_frame, width=14, font=(self.font_type, self.font_size))
+            max_entry.insert(0, f"{max_amount:.2f}")  # Pre-fill with max amount
+            max_entry.grid(row=1, column=1, padx=(0, 10), sticky="w")
+        
+            # Function to confirm and save values
             def confirmSelection(event=None):
                 """Filter data based on manually entered amount range and refresh the table display."""
                 try:
                     min_val = float(min_entry.get())
                     max_val = float(max_entry.get())
-                    
+        
                     if df_name == 'inc':
                         self.new_amount_range[0][0] = min_val
                         self.new_amount_range[0][1] = max_val
                     else:
                         self.new_amount_range[1][0] = min_val
                         self.new_amount_range[1][1] = max_val
-                        
-                    self.redisplayDataFrameTable()  # Refresh display                  
         
+                    self.redisplayDataFrameTable()  # Refresh display
                     top.destroy()
-                        
+        
                 except ValueError:
                     messagebox.showwarning("Invalid Input", "Please enter valid numeric values.")
-                    
+        
             def exitWindow(event=None):
                 top.destroy()
         
-            confirm_button = ttk.Button(top, text="Confirm", command=confirmSelection)
-            confirm_button.grid(row=3, column=0, columnspan=2, pady=10, sticky="ew")
-            
+            # Button Frame
+            button_frame = ttk.Frame(container)
+            button_frame.pack(fill="x", pady=(10, 5))
+        
+            # Confirm Button
+            confirm_button = ttk.Button(button_frame, text="Confirm", command=confirmSelection, style="Accent.TButton")
+            confirm_button.pack(pady=5, ipadx=10)  # Centered button
+        
             # Bind Enter and Escape keys
             top.bind("<Return>", confirmSelection) 
             top.bind("<Escape>", exitWindow)
-            
+        
+            # Apply modern styling to button
+            style = ttk.Style()
+            style.configure("Accent.TButton", font=(self.font_type, self.font_size, "bold"), padding=6)
+        
             top.focus_set()
+            
+            return
         
         def showTextFilter(df, type_of_filter=None, df_name=None):
-            """Open a checkbox menu to filter a column"""
+            """Open a modern, scrollable checkbox menu to filter a column."""
+            
             if type_of_filter == 'acc':
                 selection = "Account"
                 unique_vals = sorted(set(self.income_data[selection].unique()) | set(self.expenses_data[selection].unique()))
             elif type_of_filter == 'cat':
                 selection = "Category"
                 unique_vals, cat_file = self.getCategoryTypes(df_name)
-                        
-            selected_vals = {acc: tk.BooleanVar(value=True) for acc in unique_vals}  # Default: all checked
         
+            # Create modern-styled Toplevel window
             top = tk.Toplevel(self)
             top.title(f"Filter by {selection}")
-            top.geometry("200x400")
+        
+            # **Determine proper window height dynamically**
+            num_items = len(unique_vals)
+            min_height = 200  # Minimum height
+            item_height = 28   # Estimated height per checkbox
+            dynamic_height = num_items * item_height + 80  # Account for title & buttons
+            max_height = 420  # Maximum height before scrolling is needed
+        
+            window_height = min(max_height, max(min_height, dynamic_height))  # Auto-adjust height
+            window_width = 300
+            top.geometry(f"{window_width}x{window_height}")
             top.resizable(False, False)
-            
-            # Ensure the window stays on top
-            top.attributes('-topmost', True)
+            top.configure(bg="#f8f9fa")  # Light modern background
+            top.attributes('-topmost', True)  # Keep on top while main window is active
         
-            label = ttk.Label(top, text=f"Select {selection} to Display:")
-            label.pack(pady=5)
+            # Function to release 'topmost' when main window loses focus
+            def on_focus_out(event=None):
+                """Remove 'always on top' if the main app loses focus."""
+                top.attributes('-topmost', True)
         
-            # Create a scrollable frame for the checkboxes
-            frame = ttk.Frame(top)
-            canvas = tk.Canvas(frame, width=250, height=200)
-            scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+            top.bind("<FocusOut>", on_focus_out)  # Remove always-on-top when clicked away
+        
+            # **Main Container (Expands to Avoid Button Overlap)**
+            container = ttk.Frame(top, padding=12)
+            container.pack(expand=True, fill=tk.BOTH)
+        
+            # Title Label
+            title_label = ttk.Label(container, text=f"Select {selection} to Display", font=(self.font_type, self.font_size + 1, "bold"))
+            title_label.pack(pady=(5, 10))
+        
+            # **Scrollable frame for checkboxes (Fills Available Space)**
+            list_frame = ttk.Frame(container)
+            list_frame.pack(expand=True, fill="both", padx=5, pady=(0, 5))
+        
+            canvas = tk.Canvas(list_frame, bg="#f8f9fa", highlightthickness=0)  # Remove extra border
+            scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+        
+            # Frame inside canvas for checkboxes
             checkbox_frame = ttk.Frame(canvas)
         
+            # Ensure the checkbox frame resizes dynamically
             checkbox_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         
-            canvas.create_window((0, 0), window=checkbox_frame, anchor="nw")
+            canvas.create_window((0, 0), window=checkbox_frame, anchor="nw", width=270)  # Ensure full width
+        
             canvas.configure(yscrollcommand=scrollbar.set)
         
-            # Display checkboxes for each account
+            # **Conditionally Show Scrollbar Only When Needed**
+            if num_items > 9:  # Show scrollbar if there are more than 8 items
+                canvas.pack(side="left", fill="both", expand=True, padx=(5, 0))
+                scrollbar.pack(side="right", fill="y")
+            else:  # No scrollbar needed, ensure frame expands
+                canvas.pack(side="left", fill="both", expand=True, padx=(5, 0), pady=(0, 5))
+                list_frame.pack_propagate(False)  # Prevent shrinking
+        
+            # Enable mouse scrolling
+            def on_mouse_wheel(event):
+                """Enable mouse scrolling inside the frame."""
+                canvas.yview_scroll(-1 * (event.delta // 60), "units")  # Windows scroll
+        
+            def on_scroll(event):
+                """Enable scrolling for Linux/Mac."""
+                if event.num == 4:
+                    canvas.yview_scroll(-1, "units")  # Scroll up
+                elif event.num == 5:
+                    canvas.yview_scroll(1, "units")  # Scroll down
+        
+            # Bind scrolling
+            canvas.bind("<Enter>", lambda _: canvas.bind_all("<MouseWheel>", on_mouse_wheel))
+            canvas.bind("<Leave>", lambda _: canvas.unbind_all("<MouseWheel>"))
+            canvas.bind("<Button-4>", on_scroll)  # Mac/Linux
+            canvas.bind("<Button-5>", on_scroll)
+        
+            # **Display checkboxes for each account/category**
+            checkbox_widgets = {}
             for acc in unique_vals:
-                cb = ttk.Checkbutton(checkbox_frame, text=acc, variable=selected_vals[acc])
-                cb.pack(anchor="w")
+                var = tk.BooleanVar(value=True)
+                checkbox_widgets[acc] = var
+                cb = ttk.Checkbutton(checkbox_frame, text=acc, variable=var, style="TCheckbutton")
+                cb.pack(anchor="w", padx=5, pady=2, fill="x")  # Ensures proper alignment
         
-            frame.pack(pady=5, fill="both", expand=True)
-            canvas.pack(side="left", fill="both", expand=True)
-            scrollbar.pack(side="right", fill="y")
+            # **Fix for white space issue**: Adjust canvas height dynamically
+            checkbox_frame.update_idletasks()  # Update to get correct dimensions
+            frame_height = checkbox_frame.winfo_reqheight()  # Get actual height
+            canvas.configure(scrollregion=(0, 0, window_width, frame_height))  # Adjust scroll area
         
+            # **Ensure Confirm Button Always Appears**
+            button_frame = ttk.Frame(container)
+            button_frame.pack(fill="x", padx=5, pady=(5, 10))  # Keep at the bottom
+        
+            # Function to confirm selection
             def confirmSelection(event=None):
-                """Update dataframe display based on selected accounts."""
-                selected = [acc for acc, var in selected_vals.items() if var.get()]
-                            
+                """Update dataframe display based on selected items."""
+                selected = [acc for acc, var in checkbox_widgets.items() if var.get()]
+        
                 if selected:
                     if type_of_filter == 'acc':
                         self.new_accounts = selected
@@ -1268,44 +1466,27 @@ class FinanceTracker(tk.Tk):
                         self.new_categories = selected
                     self.redisplayDataFrameTable()  # Refresh display
                 else:
-                    messagebox.showwarning("Invalid Selection", "At least one account must be selected.")
+                    messagebox.showwarning("Invalid Selection", "At least one option must be selected.")
         
                 top.destroy()
-                
-            def onMousewheel(event):
-                """Allow scrolling through the checkboxes using the scroll wheel."""
-                canvas.yview_scroll(-1*(event.delta//120), "units")  # Windows
-            def onMousewheelLinux(event):
-                """Allow scrolling through the checkboxes using the scroll wheel (Linux/Mac)."""
-                if event.num == 4:
-                    canvas.yview_scroll(-1, "units")  # Scroll up
-                elif event.num == 5:
-                    canvas.yview_scroll(1, "units")  # Scroll down 
-                 
+        
             def exitWindow(event=None):
                 top.destroy()
         
-            # Confirm Button
-            confirm_button = ttk.Button(top, text="Confirm", command=confirmSelection)
-            confirm_button.pack(pady=10)
+            # Confirm Button (Now properly aligned & styled)
+            confirm_button = ttk.Button(button_frame, text="Confirm", command=confirmSelection, style="Accent.TButton")
+            confirm_button.pack(ipadx=10, fill="x")  # Properly aligned & spaced
         
-            # Bind Enter key to confirm selection
+            # Bind Enter & Escape keys
             top.bind("<Return>", confirmSelection)
             top.bind("<Escape>", exitWindow)
-            
-            # Bind scrolling to the canvas (Windows & Mac/Linux support)
-            canvas.bind("<MouseWheel>", onMousewheel)  # Windows
-            canvas.bind("<Button-4>", onMousewheelLinux)  # Linux/Mac (Scroll up)
-            canvas.bind("<Button-5>", onMousewheelLinux)  # Linux/Mac (Scroll down)
-            
-            # Also bind scrolling to the entire top-level window
-            canvas.bind("<MouseWheel>", onMousewheel)
-            canvas.bind("<Button-4>", onMousewheelLinux)
-            canvas.bind("<Button-5>", onMousewheelLinux)
-
-            confirm_button.focus_set()
-                     
-            return
+        
+            # Apply modern button styling
+            style = ttk.Style()
+            style.configure("Accent.TButton", font=(self.font_type, self.font_size, "bold"), padding=6)
+            style.configure("TCheckbutton", font=(self.font_type, self.font_size))
+        
+            top.focus_set()
         
         def addCategoryToFile(df_name):
             """Open a window to fully edit the category list (add, remove, or update categories)."""
@@ -1316,25 +1497,40 @@ class FinanceTracker(tk.Tk):
             # Create a popup window
             top = tk.Toplevel(self)
             top.title("Edit Categories")
+            top.geometry("400x400")  # Fixed size for balance
+            top.resizable(False, False)
+            top.configure(bg="#f8f9fa")  # Light background
             top.attributes('-topmost', True)  # Keep window on top
         
-            label = ttk.Label(top, text="Manage Categories:")
-            label.pack(pady=5)
+            # Title Label
+            title_label = ttk.Label(
+                top, text="Manage Categories", font=(self.font_type, self.font_size + 1, "bold")
+            )
+            title_label.pack(pady=(10, 5))
         
-            # Listbox to display categories
-            category_listbox = tk.Listbox(top, selectmode=tk.SINGLE, width=40, height=10)
-            category_listbox.pack(pady=5, padx=10, fill="both", expand=True)
+            # **Scrollable Listbox Frame**
+            listbox_frame = ttk.Frame(top)
+            listbox_frame.pack(pady=(5, 10), padx=10, fill="both", expand=True)
+        
+            listbox_scroll = ttk.Scrollbar(listbox_frame, orient="vertical")
+            category_listbox = tk.Listbox(
+                listbox_frame, selectmode=tk.SINGLE, width=40, height=10, yscrollcommand=listbox_scroll.set, font=(self.font_type, self.font_size)
+            )
+            listbox_scroll.config(command=category_listbox.yview)
+        
+            category_listbox.pack(side="left", fill="both", expand=True)
+            listbox_scroll.pack(side="right", fill="y")
         
             # Populate listbox with categories
             for category in cat_list:
                 category_listbox.insert(tk.END, category)
         
-            # Entry box for adding a new category
+            # **Category Input Section**
             entry_frame = ttk.Frame(top)
-            entry_frame.pack(pady=5, fill="x", expand=True)
+            entry_frame.pack(pady=5, padx=10, fill="x")
         
-            category_entry = ttk.Entry(entry_frame, width=30)
-            category_entry.pack(side="left", padx=5)
+            category_entry = ttk.Entry(entry_frame, font=(self.font_type, self.font_size))
+            category_entry.pack(side="left", expand=True, fill="x", padx=(0, 5))
         
             def addCategory():
                 """Add a new category to the listbox and update the file."""
@@ -1343,7 +1539,7 @@ class FinanceTracker(tk.Tk):
                 if not new_category:
                     messagebox.showwarning("Invalid Input", "Category cannot be empty.", parent=top)
                     return
-                
+        
                 if new_category in cat_list:
                     messagebox.showinfo("Duplicate Category", "This category already exists.", parent=top)
                     return
@@ -1383,22 +1579,26 @@ class FinanceTracker(tk.Tk):
             def exitWindow(event=None):
                 top.destroy()
         
-            # Buttons for managing categories
+            # **Buttons for Managing Categories**
             button_frame = ttk.Frame(top)
-            button_frame.pack(pady=5, fill="x", expand=True)
+            button_frame.pack(pady=10, padx=10, fill="x")
         
-            add_button = ttk.Button(button_frame, text="Add", command=addCategory)
-            add_button.pack(side="left", padx=5, expand=True)
+            add_button = ttk.Button(button_frame, text="Add", command=addCategory, style="Accent.TButton")
+            add_button.pack(side="left", expand=True, fill="x", padx=5)
         
-            remove_button = ttk.Button(button_frame, text="Remove", command=removeCategory)
-            remove_button.pack(side="left", padx=5, expand=True)
+            remove_button = ttk.Button(button_frame, text="Remove", command=removeCategory, style="Accent.TButton")
+            remove_button.pack(side="left", expand=True, fill="x", padx=5)
         
-            save_button = ttk.Button(button_frame, text="Save & Close", command=saveCategories)
-            save_button.pack(side="left", padx=5, expand=True)
+            save_button = ttk.Button(button_frame, text="Save & Close", command=saveCategories, style="Accent.TButton")
+            save_button.pack(side="left", expand=True, fill="x", padx=5)
         
             # Bind Enter key to add category
-            category_entry.bind("<Return>", saveCategories)
-            category_entry.bind("<Escape>", exitWindow)
+            category_entry.bind("<Return>", addCategory)
+            top.bind("<Escape>", exitWindow)
+        
+            # Apply modern button styling
+            style = ttk.Style()
+            style.configure("Accent.TButton", font=(self.font_type, self.font_size, "bold"), padding=6)
         
             # Focus on the entry field
             category_entry.focus_set()
@@ -1459,7 +1659,4 @@ class FinanceTracker(tk.Tk):
 
 if __name__ == "__main__":
     app = FinanceTracker()
-    app.lift()
-    app.attributes('-topmost', True)
-    app.after(1, lambda: app.attributes('-topmost', False))
     app.mainloop()

@@ -1,0 +1,9 @@
+CC Payment
+Car Payment
+Interest
+Not Assigned
+Other
+Paycheck
+Refund
+Student Loan Payment
+Transfers

@@ -1,0 +1,24 @@
+Car Insurance
+Car Maintenance
+Cat
+Credit Card Payment
+Eating Out
+Electricity
+Gas
+Groceries
+Housing
+Hyundai Loan
+Interest Payment
+Investments
+Medical
+Miscellaneous
+Not Assigned
+Phone
+Recreation & Entertainment
+Rent
+Shopping
+Student Loans
+Subscriptions
+Transfers
+Travel
+Wifi
