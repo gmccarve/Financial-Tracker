@@ -239,10 +239,10 @@ class FinanceTracker(tk.Tk):
             expenses_monthly_totals = computeMonthlyTotals(exp)
 
             # Prepare Account Summary Table
-            account_summary = pd.DataFrame(columns=["Account"] + months)
+            account_summary = pd.DataFrame(columns=["Account"] + self.all_months)
             
             # Networth list by month
-            networth = np.zeros((len(months)))
+            networth = np.zeros((len(self.all_months)))
 
             for acc_type, accounts in account_types.items():
                 for account in accounts:
@@ -266,17 +266,17 @@ class FinanceTracker(tk.Tk):
                     totals_row = ["TOTAL " + acc_type] + list(account_summary.iloc[-len(accounts):].drop(columns=["Account"]).sum(axis=0))
                     account_summary.loc[len(account_summary)] = totals_row
                 else:
-                    totals_row = ["TOTAL " + acc_type] + [0 for _ in range(len(months))]
+                    totals_row = ["TOTAL " + acc_type] + [0 for _ in range(len(self.all_months))]
                     account_summary.loc[len(account_summary)] = totals_row
             
                 # Add a break row (empty)
-                account_summary.loc[len(account_summary)] = [""] + ["" for _ in range(len(months))]
+                account_summary.loc[len(account_summary)] = [""] + ["" for _ in range(len(self.all_months))]
             
             account_summary.loc[len(account_summary)] = ["TOTAL NETWORTH"] + networth.tolist()
 
             return account_summary
         
-        def displayAccountSummary(account_summary, initial_balances, displayed_months):
+        def displayAccountSummary(account_summary, initial_balances, months):
             """Display financial data """
             
             def changeMonthsDisplayed():
@@ -289,7 +289,7 @@ class FinanceTracker(tk.Tk):
                 tk.Label(top, text="Select Months to Display:", font=(self.font_type, self.font_size)).pack(pady=10)
             
                 # Slider (Scale) to select number of months
-                slider = tk.Scale(top, from_=3, to=len(months), orient="horizontal", length=250, 
+                slider = tk.Scale(top, from_=3, to=len(self.all_months), orient="horizontal", length=250, 
                                   tickinterval=3, resolution=1)
                 slider.set(number_of_months_displayed)
                 slider.pack()
@@ -303,11 +303,9 @@ class FinanceTracker(tk.Tk):
                     """Update number_of_months_displayed and refresh table."""
                     try:
                         value = int(entry_var.get())  # Get number from entry box
-                        if 3 <= value <= len(months):
-                            number_of_months_displayed = value
-                            displayed_months = months[-number_of_months_displayed:]  # Show the last `n` months
-                            self.clearMainFrame()
-                            displayAccountSummary(account_summary, initial_balances, displayed_months)  # Refresh the table
+                        if 3 <= value <= len(self.all_months):
+                            displayed_months = self.all_months[-value:]  # Show the last `n` months
+                            addToTreeView(tree, account_tree, account_summary, displayed_months)  # Refresh the table
                             top.destroy()  # Close window
                         else:
                             #TODO Change to an error message
@@ -326,7 +324,7 @@ class FinanceTracker(tk.Tk):
                 def syncEntry(event):
                     try:
                         value = int(entry_var.get())
-                        if 3 <= value <= len(months):
+                        if 3 <= value <= len(self.all_months):
                             slider.set(value)
                     except ValueError:
                         pass  # Ignore invalid input
@@ -335,6 +333,8 @@ class FinanceTracker(tk.Tk):
                 entry_box.bind("<KeyRelease>", syncEntry)  # Sync slider when typing
             
                 top.mainloop()
+                
+                return
             
             def showColumnMenu(event, table):
                 
@@ -347,20 +347,9 @@ class FinanceTracker(tk.Tk):
                 
             def switchOrder(event):
                 """Toggle month order and refresh the table without reloading the UI."""
-                self.switch_monthly_order = not self.switch_monthly_order  # Toggle order
-                    
-                # Reverse months order if needed
-                if self.switch_monthly_order:
-                    displayed_months.reverse()
-                    
-                # Clear the Treeview contents but keep UI intact
-                self.clearTreeview(tree)  
-                self.clearTreeview(account_tree)
-                    
-                # Update column headers to match the new order
-                tree["columns"] = displayed_months  # Set new order of columns
-                    
-                __annotations__ = addToTreeView(tree, account_tree, account_summary)  
+                self.switch_monthly_order = not self.switch_monthly_order  # Toggle order                    
+                addToTreeView(tree, account_tree, account_summary, displayed_months)  
+                return
                 
             def on_mouse_wheel(event):
                 """ Mouse wheel scrolling - improves speed"""
@@ -495,19 +484,32 @@ class FinanceTracker(tk.Tk):
                
                 return                
             
-            def addToTreeView(tree, account_tree, account_summary):
+            def addToTreeView(tree, account_tree, account_summary, months):
+                
+                # Clear the Treeview contents but keep UI intact
+                self.clearTreeview(tree)  
+                self.clearTreeview(account_tree)
+                
+                if self.switch_monthly_order:
+                    months_ = months[::-1]
+                else:
+                    months_ = months
+                    
+                tree["columns"] = months_
+                
                 # Reapply column headings
-                for col in displayed_months:
+                for col in months_:
                     text = formatMonthYear(col[0], col[1])  # Format 'Mon 'YY'
                     tree.heading(col, text=text, anchor=tk.CENTER, command=lambda c=col: showMonthBreakdown(c))
                     tree.column(col, width=column_widths.get(col, 100), anchor=tk.E, stretch=tk.NO)  # Adjust width
                     
                 tag = 'oddrow'
             
-                num_months = len(displayed_months)
+                num_months = len(months_)
             
                 # Repopulate Treeview with new month order
                 for i, row in account_summary.iterrows():
+                    """
                     tmp_row = row.tolist()
                     tmp_row = tmp_row[1:]
                     tmp_row = tmp_row[-num_months:]
@@ -516,7 +518,7 @@ class FinanceTracker(tk.Tk):
                     formatted_row = [f"${val/100.:,.2f}" if isinstance(val, (int, float)) else val for val in tmp_row]
                     
                     #TODO FIX THIS SHITTTTT
-                    print (formatted_row)
+                    
                     # Alternating row colors
                     tag = "oddrow" if tag == "evenrow" else "evenrow"
                     if "TOTAL" in row['Account']:
@@ -524,10 +526,13 @@ class FinanceTracker(tk.Tk):
                     # Insert into both Treeviews
                     account_tree.insert("", tk.END, values=[row["Account"]], tags=(tag,))
                     tree.insert("", tk.END, values=formatted_row, tags=(tag,))
+                    """
                     
                 return i
             
-             
+            # Determine number of months to display
+            number_of_months_displayed = min(12, len(months))
+            displayed_months = months[-number_of_months_displayed:]
             
             # Create the Treeview Table
             table_frame = ttk.Frame(self.main_frame)
@@ -575,7 +580,7 @@ class FinanceTracker(tk.Tk):
             style = ttk.Style()
             self.goodLookingTables(style)
     
-            i = addToTreeView(tree, account_tree, account_summary)
+            i = addToTreeView(tree, account_tree, account_summary, displayed_months)
     
             # Apply row styles
             for t in (tree, account_tree):
@@ -600,11 +605,7 @@ class FinanceTracker(tk.Tk):
         self.clearMainFrame()
         
         # Define months for table columns
-        months = generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
-        number_of_months_displayed = min(12, len(months))
-        displayed_months = months[-number_of_months_displayed:]
-        if self.switch_monthly_order:
-            displayed_months = displayed_months[::-1]
+        self.all_months = generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
         
         # Get initial balances
         initial_balances = self.starting_data.copy()
@@ -613,7 +614,7 @@ class FinanceTracker(tk.Tk):
         account_summary = monthlyBalances()
         
         # Display the datatable
-        displayAccountSummary(account_summary, initial_balances, displayed_months)
+        displayAccountSummary(account_summary, initial_balances, self.all_months)
         
         return
         
