@@ -106,7 +106,7 @@ class FinanceTracker(tk.Tk):
         self.showMainFrame(start_fresh=False)
         self.selectFilesAndFolders(reload=True)
         
-        #self.showMonthlyBreakdown()
+        self.showMonthlyBreakdown()
         #self.destroy()
         return
     
@@ -131,7 +131,7 @@ class FinanceTracker(tk.Tk):
         
         self.last_saved_file = os.path.join(os.path.dirname(__file__), "lastSavedFile.txt")
            
-        self.switch_montly_order = False
+        self.switch_montly_order = True
         
         self.drop_index = True
         
@@ -275,8 +275,91 @@ class FinanceTracker(tk.Tk):
 
             return account_summary
         
-        def displayAccountSummary(account_summary, initial_balances, months, ):
+        def displayAccountSummary(account_summary, initial_balances, displayed_months):
             """Display financial data """
+            
+            def changeMonthsDisplayed():
+                """Modify the number of months displayed using a slider and entry box."""
+                top = tk.Toplevel(self)
+                top.title("Select Number of Months to Display")
+                self.openRelativeWindow(top, width=350, height=200)
+                top.resizable(False, False)
+            
+                tk.Label(top, text="Select Months to Display:", font=(self.font_type, self.font_size)).pack(pady=10)
+            
+                # Slider (Scale) to select number of months
+                slider = tk.Scale(top, from_=3, to=len(months), orient="horizontal", length=250, 
+                                  tickinterval=3, resolution=1)
+                slider.set(number_of_months_displayed)
+                slider.pack()
+            
+                # Entry Box for direct input
+                entry_var = tk.StringVar(value=str(number_of_months_displayed))
+                entry_box = ttk.Entry(top, textvariable=entry_var, width=5)
+                entry_box.pack(pady=5)
+            
+                def updateMonths():
+                    """Update number_of_months_displayed and refresh table."""
+                    try:
+                        value = int(entry_var.get())  # Get number from entry box
+                        if 3 <= value <= len(months):
+                            number_of_months_displayed = value
+                            displayed_months = months[-number_of_months_displayed:]  # Show the last `n` months
+                            self.clearMainFrame()
+                            displayAccountSummary(account_summary, initial_balances, displayed_months)  # Refresh the table
+                            top.destroy()  # Close window
+                        else:
+                            #TODO Change to an error message
+                            print("Invalid range: Must be between 3 and 24 months")
+                    except ValueError:
+                        print("Invalid input: Enter a number")
+            
+                # Apply Button
+                apply_btn = ttk.Button(top, text="Apply", command=updateMonths)
+                apply_btn.pack(pady=10)
+            
+                # Link slider and textbox
+                def syncSlider(event):
+                    entry_var.set(str(slider.get()))
+            
+                def syncEntry(event):
+                    try:
+                        value = int(entry_var.get())
+                        if 3 <= value <= len(months):
+                            slider.set(value)
+                    except ValueError:
+                        pass  # Ignore invalid input
+            
+                slider.bind("<Motion>", syncSlider)  # Sync entry box when moving slider
+                entry_box.bind("<KeyRelease>", syncEntry)  # Sync slider when typing
+            
+                top.mainloop()
+            
+            def showColumnMenu(event, table):
+                
+                menu = tk.Menu(self, tearoff=0)
+                
+                menu.add_command(label="Reverse Order", command=lambda: switchOrder(event))
+                menu.add_command(label="Change Displayed Months", command=lambda: changeMonthsDisplayed())
+                
+                menu.post(event.x_root, event.y_root)
+                
+            def switchOrder(event):
+                """Toggle month order and refresh the table without reloading the UI."""
+                self.switch_montly_order = not self.switch_montly_order  # Toggle order
+                    
+                # Reverse months order if needed
+                if self.switch_montly_order:
+                    displayed_months.reverse()
+                    
+                # Clear the Treeview contents but keep UI intact
+                self.clearTreeview(tree)  
+                self.clearTreeview(account_tree)
+                    
+                # Update column headers to match the new order
+                tree["columns"] = displayed_months  # Set new order of columns
+                    
+                __annotations__ = addToTreeView(tree, account_summary)                
             
             def showMonthBreakdown(month_name):
                 """Display a breakdown of all account statistics for the selected month."""
@@ -404,7 +487,7 @@ class FinanceTracker(tk.Tk):
             
             def addToTreeView(tree, account_summary):
                 # Reapply column headings
-                for col in months:
+                for col in displayed_months:
                     text = formatMonthYear(col[0], col[1])  # Format 'Mon 'YY'
                     tree.heading(col, text=text, anchor=tk.CENTER, command=lambda c=col: showMonthBreakdown(c))
                     tree.column(col, width=column_widths.get(col, 100), anchor=tk.E, stretch=tk.NO)  # Adjust width
@@ -416,38 +499,28 @@ class FinanceTracker(tk.Tk):
                     tmp_row = row.tolist()
                     if self.switch_montly_order:
                         tmp_row = [tmp_row[0]] + tmp_row[::-1][:-1]
+                    #tmp_row = tmp_row[-number_of_months_displayed:]
+                    #TODO FIX THIS
                     formatted_row = [f"${val/100.:,.2f}" if isinstance(val, (int, float)) else val for val in tmp_row]
                     
                     # Alternating row colors
                     tag = "oddrow" if tag == "evenrow" else "evenrow"
                     if "TOTAL" in row['Account']:
                         tag = "totalrow"
-
                     # Insert into both Treeviews
                     account_tree.insert("", tk.END, values=[row["Account"]], tags=(tag,))
                     tree.insert("", tk.END, values=formatted_row[1:], tags=(tag,))
                     
                 return i
             
-            def switchOrder():
-                """Toggle month order and refresh the table without reloading the UI."""
-                self.switch_montly_order = not self.switch_montly_order  # Toggle order
-                
-                # Reverse months order if needed
-                months = generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
-                if self.switch_montly_order:
-                    months.reverse()
-                
-                # Clear the Treeview contents but keep UI intact
-                self.clearTreeview(tree)  
-                self.clearTreeview(account_tree)
-                
-                # Update column headers to match the new order
-                tree["columns"] = months  # Set new order of columns
-                
-                __annotations__ = addToTreeView(tree, account_summary)
-                
-                return
+            def on_mouse_wheel(event):
+                """ Mouse wheel scrolling - improves speed"""
+                if event.state & 0x0001:  # Shift key pressed (for horizontal scroll)
+                    tree.xview_scroll(int(-1 * (event.delta / 10)), "units")
+                else:  # Default vertical scroll
+                    account_tree.yview_scroll(int(-1 * (event.delta / 60)), "units")
+                    tree.yview_scroll(int(-1 * (event.delta / 20)), "units")
+                return 
             
             # Create the Treeview Table
             table_frame = ttk.Frame(self.main_frame)
@@ -456,15 +529,19 @@ class FinanceTracker(tk.Tk):
             # Define column widths
             window_width = 160
             column_widths = {"Account": 160}  # Wider for account names
-            for month in months:
+            for month in displayed_months:
                 column_widths[month] = 110  # Increase width for readability
                 window_width += 110
     
             # Create a separate Treeview for the Account column
             account_tree = ttk.Treeview(table_frame, columns=["Account"], show="headings", selectmode="none", height=15)
-            account_tree.heading("Account", text="Account", anchor=tk.W, command=lambda: switchOrder())
+            account_tree.heading("Account", text="Account", anchor=tk.W)
             account_tree.column("Account", width=160, anchor=tk.W, stretch=tk.NO)
             account_tree.pack(side=tk.LEFT, fill=tk.Y)
+                        
+            # Bind right-click event to show column menu
+            account_tree.bind("<Button-1>", lambda event: switchOrder(event))
+            account_tree.bind("<Button-3>", lambda event: showColumnMenu(event, account_tree))
     
             # Create a frame for the main Treeview and scrollbar
             data_frame = ttk.Frame(table_frame)
@@ -477,7 +554,7 @@ class FinanceTracker(tk.Tk):
             # Main Treeview (for months)
             tree = ttk.Treeview(
                 data_frame, 
-                columns=months, 
+                columns=displayed_months, 
                 show="headings", 
                 selectmode="none", 
                 xscrollcommand=x_scroll.set,
@@ -501,14 +578,6 @@ class FinanceTracker(tk.Tk):
     
             tree.pack(expand=True, fill=tk.BOTH)
     
-            # Mouse wheel scrolling - improves speed
-            def on_mouse_wheel(event):
-                if event.state & 0x0001:  # Shift key pressed (for horizontal scroll)
-                    tree.xview_scroll(int(-1 * (event.delta / 10)), "units")
-                else:  # Default vertical scroll
-                    account_tree.yview_scroll(int(-1 * (event.delta / 60)), "units")
-                    tree.yview_scroll(int(-1 * (event.delta / 20)), "units")
-    
             # Bind mouse scrolling events
             tree.bind("<MouseWheel>", on_mouse_wheel)
             account_tree.bind("<MouseWheel>", on_mouse_wheel)
@@ -525,6 +594,10 @@ class FinanceTracker(tk.Tk):
         
         # Define months for table columns
         months = generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
+        number_of_months_displayed = min(12, len(months))
+        displayed_months = months[-number_of_months_displayed:]
+        if self.switch_montly_order:
+            displayed_months = displayed_months[::-1]
         
         # Get initial balances
         initial_balances = self.starting_data.copy()
@@ -533,7 +606,7 @@ class FinanceTracker(tk.Tk):
         account_summary = monthlyBalances()
         
         # Display the datatable
-        displayAccountSummary(account_summary, initial_balances, months, )
+        displayAccountSummary(account_summary, initial_balances, displayed_months)
         
         return
         
@@ -1117,7 +1190,7 @@ class FinanceTracker(tk.Tk):
                 income_by_date = income_by_date.reindex(all_dates, fill_value=0)
                 expenses_by_date = expenses_by_date.reindex(all_dates, fill_value=0)
             
-                # Compute net cash flow (Income - Expenses) and cumulative sum
+                # Compute net cash flow (Income - Expenses) and cumulative sumn
                 net_cash_flow = (income_by_date - expenses_by_date).cumsum() + self.starting_data[account].values[0] / 100.
             
                 # Plot the net income/expense difference
