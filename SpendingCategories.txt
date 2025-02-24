@@ -21,4 +21,4 @@ Student Loans
 Subscriptions
 Transfers
 Travel
-Wifi
+Internet

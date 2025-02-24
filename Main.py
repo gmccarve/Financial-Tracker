@@ -7,7 +7,7 @@ from tkinter import ttk, filedialog, messagebox
 from tkcalendar import Calendar
 from datetime import date
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import calendar
 from datetime import datetime, timedelta
 
@@ -135,7 +135,7 @@ class FinanceTracker(tk.Tk):
         # For formatting consistency
         
         self.font_type = 'calibri'
-        self.font_size = 13
+        self.font_size = 12
         
         if on_start == False:
             self.clearMainFrame()
@@ -392,28 +392,6 @@ class FinanceTracker(tk.Tk):
                 tree.focus_set()
                
                 return                
-    
-            def showAccountBreakdown(account):
-                """a"""
-                
-                # If the clicked column is "Account", do nothing
-                if account == "Account":
-                    return
-                
-                # Create a popup window
-                top = tk.Toplevel(self)
-                top.title(f"{account} Breakdown")
-            
-                # Create a Treeview for displaying breakdown data
-                tree = ttk.Treeview(top, columns=["Account", "Start Balance", "Total Income", "Total Expenses", 
-                                      "Net Cash Flow", "Ending Balance", "Savings Rate (%)"], 
-                        show="headings", selectmode="none")
-                
-                # Apply standard formatting for tablen
-                style = ttk.Style()
-                self.goodLookingTables(style)
-            
-                return
             
             def addToTreeView(tree, account_summary):
                 # Reapply column headings
@@ -635,8 +613,6 @@ class FinanceTracker(tk.Tk):
             entry.grid(row=i + 1, column=1, padx=10, pady=5, sticky="w")
     
             entry_widgets[account] = entry
-            
-            print (i, account)
     
         # Function to save changes
         def saveChanges(event=None):
@@ -968,10 +944,18 @@ class FinanceTracker(tk.Tk):
         
         def showTable(df, df_name):
             """Display a table for the given dataframe in the main window with an editable 'Category' column."""
+            
+            df = df.drop("Index", axis=1)
+            
+            if df_name == 'inc':
+                row = 3
+            else:
+                row = 1
 
             # Create a frame with padding for aesthetics
             frame = ttk.Frame(self.main_frame, padding=5)
-            frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+            #frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+            frame.grid(row=row, column=0, sticky='w', pady=2)
         
             columns = list(df.columns)
             tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse")
@@ -1002,7 +986,8 @@ class FinanceTracker(tk.Tk):
             # Populate Treeview with data
             for i, row in df.iterrows():
                 values = list(row)
-                values[3] = f"${values[3]/100:.2f}"  # Format amount as currency
+                values[2] = f"${values[2]/100:.2f}"  # Format amount as currency
+                #values[3] = f"${values[3]/100:.2f}"  # Format amount as currency
                 tag = "oddrow" if i % 2 == 0 else "evenrow"
                 tree.insert('', tk.END, values=values, tags=(tag,))
         
@@ -1047,8 +1032,12 @@ class FinanceTracker(tk.Tk):
                     else:
                         self.expenses_data.at[index_value, "Category"] = new_value
                     
-                    df.at[row_index, "Category"] = new_value  # Update the displayed DataFrame
-                    tree.item(item_id, values=[df.at[row_index, col] for col in columns])  # Update the Treeview
+                    df.at[index_value, "Category"] = new_value  # Update the displayed DataFrame
+                    
+                    new_row = [df.at[index_value, col] for col in columns]
+                    new_row[3] = f"${new_row[3]/100:.2f}"
+                    
+                    tree.item(item_id, values=new_row)# Update the Treeview
                     dropdown.destroy()  # Remove the dropdown               
         
                 dropdown.bind("<<ComboboxSelected>>", onCategorySelected)
@@ -1118,27 +1107,43 @@ class FinanceTracker(tk.Tk):
             
             # Create a dedicated frame for the plot
             self.plot_frame = ttk.Frame(self.main_frame)
-            self.plot_frame.pack(side="right", fill="both", expand=True, padx=10)
+            self.plot_frame.grid(row=4, column=0, sticky="nsew", padx=10, pady=10)  # Ensure expansion
+            
+            # Allow the frame to expand
+            self.main_frame.grid_rowconfigure(4, weight=1)  # Allow row 4 to expand
+            self.main_frame.grid_columnconfigure(0, weight=1)  # Allow column 0 to expand
             
             # Embed the Matplotlib figure in Tkinter
             canvas = FigureCanvasTkAgg(fig, master=self.plot_frame)
             canvas.draw()
+            
+            # Create a frame for the toolbar (this fixes visibility issues)
+            toolbar_frame = ttk.Frame(self.plot_frame)
+            toolbar_frame.pack(side="top", fill="x")  # Ensure it's visible at the top
+            
+            # Add Matplotlib interactive toolbar for zooming, panning, etc.
+            toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
+            toolbar.update()
+            
+            # Pack the plot itself
             canvas.get_tk_widget().pack(fill="both", expand=True)
             
             return
         
         self.clearMainFrame()
         
-        self.geometry("1200x1000")
+        self.geometry("1000x1000")
         
-        expenses_label = ttk.Label(self.main_frame, text="Expenses", font=("Arial", 12, "bold"))
-        expenses_label.pack()
+        # Make sure the parent frame's column is expandable
+        self.main_frame.grid_columnconfigure(0, weight=1)
+        
+        expenses_label = ttk.Label(self.main_frame, text="EXPENSES", font=(self.font_type, self.font_size, "bold"))
+        expenses_label.grid(row=0, column=0, sticky="n", pady=2)
         showTable(exp.copy(), 'exp')
         
-        income_label = ttk.Label(self.main_frame, text="Income", font=("Arial", 12, "bold"))
-        income_label.pack()
+        expenses_label = ttk.Label(self.main_frame, text="INCOME", font=(self.font_type, self.font_size, "bold"))
+        expenses_label.grid(row=2, column=0, sticky="n", pady=2)
         showTable(inc.copy(), 'inc')
-        
         
         showTimeSeriesPlot(inc.copy(), exp.copy())
         
@@ -1189,6 +1194,9 @@ class FinanceTracker(tk.Tk):
                 col = inc_data_copy.columns[r+v+1]
                 inc_data_copy = inc_data_copy[inc_data_copy[col].isin(values)]
                 exp_data_copy = exp_data_copy[exp_data_copy[col].isin(values)]
+                
+        inc_data_copy = inc_data_copy.reset_index(drop=True) 
+        exp_data_copy = exp_data_copy.reset_index(drop=True) 
         
         self.displayIncExpTables(inc_data_copy, exp_data_copy)
         
@@ -1196,6 +1204,17 @@ class FinanceTracker(tk.Tk):
     
     def showColumnMenu(self, event, table, df, df_name):
         """Show a menu when right-clicking a table heading."""
+        
+        def showLastMonth(df, delta=0):
+            """Only show data for the last 30/60/90/180/365 days"""
+                
+            if delta > 0:
+                self.new_date_range[0] = self.date_range[1] - timedelta(delta)
+                self.new_date_range[1] = self.date_range[1]
+
+                self.redisplayDataFrameTable()  # Refresh display
+            
+            return
         
         def showCalendar(df):
             """Open a calendar window to select a date range."""      
@@ -1213,9 +1232,9 @@ class FinanceTracker(tk.Tk):
             
             start_cal = Calendar(top, 
                                  selectmode="day", 
-                                 year=self.date_range[0].year, 
-                                 month=self.date_range[0].month, 
-                                 day=self.date_range[0].day,
+                                 year=self.date_range[1].year, 
+                                 month=self.date_range[1].month-1 if self.date_range[1].month-1 < 12 else 12, 
+                                 day=self.date_range[1].day,
                                  date_pattern = 'Y-mm-dd',
                                  )
             
@@ -1616,6 +1635,13 @@ class FinanceTracker(tk.Tk):
             """Calendar of date window initially starting and ending where the date is"""
             menu.add_separator()
             menu.add_command(label="Choose date window", command=lambda: showCalendar(df.copy))
+            menu.add_separator()
+            menu.add_command(label="Show last 30 days", command=lambda: showLastMonth(df.copy, delta=30))
+            menu.add_command(label="Show last 60 days", command=lambda: showLastMonth(df.copy, delta=60))
+            menu.add_command(label="Show last 90 days", command=lambda: showLastMonth(df.copy, delta=90))
+            menu.add_command(label="Show last 180 days", command=lambda: showLastMonth(df.copy, delta=180))
+            menu.add_command(label="Show last 365 days", command=lambda: showLastMonth(df.copy, delta=365))
+            
         elif col_name == 'Description':
             self
         elif col_name == 'Amount':
@@ -1652,7 +1678,10 @@ class FinanceTracker(tk.Tk):
             table.delete(item)
         for i, row in df.iterrows():
             values = list(row)
-            values[3] = f"${values[3]/100:.2f}"
+            try:
+                values[3] = f"${values[3]/100:.2f}"
+            except:
+                values[2] = f"${values[2]/100:.2f}"
             table.insert('', tk.END, values=values)
             
         return
