@@ -108,6 +108,7 @@ class FinanceTracker(tk.Tk):
         
         self.showMonthlyBreakdown()
         #self.destroy()
+        
         return
     
     def startFresh(self, on_start=False):
@@ -131,7 +132,7 @@ class FinanceTracker(tk.Tk):
         
         self.last_saved_file = os.path.join(os.path.dirname(__file__), "lastSavedFile.txt")
            
-        self.switch_montly_order = True
+        self.switch_monthly_order = True
         
         self.drop_index = True
         
@@ -346,10 +347,10 @@ class FinanceTracker(tk.Tk):
                 
             def switchOrder(event):
                 """Toggle month order and refresh the table without reloading the UI."""
-                self.switch_montly_order = not self.switch_montly_order  # Toggle order
+                self.switch_monthly_order = not self.switch_monthly_order  # Toggle order
                     
                 # Reverse months order if needed
-                if self.switch_montly_order:
+                if self.switch_monthly_order:
                     displayed_months.reverse()
                     
                 # Clear the Treeview contents but keep UI intact
@@ -359,7 +360,16 @@ class FinanceTracker(tk.Tk):
                 # Update column headers to match the new order
                 tree["columns"] = displayed_months  # Set new order of columns
                     
-                __annotations__ = addToTreeView(tree, account_summary)                
+                __annotations__ = addToTreeView(tree, account_tree, account_summary)  
+                
+            def on_mouse_wheel(event):
+                """ Mouse wheel scrolling - improves speed"""
+                if event.state & 0x0001:  # Shift key pressed (for horizontal scroll)
+                    tree.xview_scroll(int(-1 * (event.delta / 10)), "units")
+                else:  # Default vertical scroll
+                    account_tree.yview_scroll(int(-1 * (event.delta / 60)), "units")
+                    tree.yview_scroll(int(-1 * (event.delta / 20)), "units")
+                return                
             
             def showMonthBreakdown(month_name):
                 """Display a breakdown of all account statistics for the selected month."""
@@ -485,7 +495,7 @@ class FinanceTracker(tk.Tk):
                
                 return                
             
-            def addToTreeView(tree, account_summary):
+            def addToTreeView(tree, account_tree, account_summary):
                 # Reapply column headings
                 for col in displayed_months:
                     text = formatMonthYear(col[0], col[1])  # Format 'Mon 'YY'
@@ -494,33 +504,30 @@ class FinanceTracker(tk.Tk):
                     
                 tag = 'oddrow'
             
+                num_months = len(displayed_months)
+            
                 # Repopulate Treeview with new month order
                 for i, row in account_summary.iterrows():
                     tmp_row = row.tolist()
-                    if self.switch_montly_order:
-                        tmp_row = [tmp_row[0]] + tmp_row[::-1][:-1]
-                    #tmp_row = tmp_row[-number_of_months_displayed:]
-                    #TODO FIX THIS
+                    tmp_row = tmp_row[1:]
+                    tmp_row = tmp_row[-num_months:]
+                    if self.switch_monthly_order:
+                        tmp_row = tmp_row[::-1]
                     formatted_row = [f"${val/100.:,.2f}" if isinstance(val, (int, float)) else val for val in tmp_row]
                     
+                    #TODO FIX THIS SHITTTTT
+                    print (formatted_row)
                     # Alternating row colors
                     tag = "oddrow" if tag == "evenrow" else "evenrow"
                     if "TOTAL" in row['Account']:
                         tag = "totalrow"
                     # Insert into both Treeviews
                     account_tree.insert("", tk.END, values=[row["Account"]], tags=(tag,))
-                    tree.insert("", tk.END, values=formatted_row[1:], tags=(tag,))
+                    tree.insert("", tk.END, values=formatted_row, tags=(tag,))
                     
                 return i
             
-            def on_mouse_wheel(event):
-                """ Mouse wheel scrolling - improves speed"""
-                if event.state & 0x0001:  # Shift key pressed (for horizontal scroll)
-                    tree.xview_scroll(int(-1 * (event.delta / 10)), "units")
-                else:  # Default vertical scroll
-                    account_tree.yview_scroll(int(-1 * (event.delta / 60)), "units")
-                    tree.yview_scroll(int(-1 * (event.delta / 20)), "units")
-                return 
+             
             
             # Create the Treeview Table
             table_frame = ttk.Frame(self.main_frame)
@@ -568,7 +575,7 @@ class FinanceTracker(tk.Tk):
             style = ttk.Style()
             self.goodLookingTables(style)
     
-            i = addToTreeView(tree, account_summary)
+            i = addToTreeView(tree, account_tree, account_summary)
     
             # Apply row styles
             for t in (tree, account_tree):
@@ -596,7 +603,7 @@ class FinanceTracker(tk.Tk):
         months = generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
         number_of_months_displayed = min(12, len(months))
         displayed_months = months[-number_of_months_displayed:]
-        if self.switch_montly_order:
+        if self.switch_monthly_order:
             displayed_months = displayed_months[::-1]
         
         # Get initial balances
