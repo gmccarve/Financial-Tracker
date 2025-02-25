@@ -106,7 +106,7 @@ class FinanceTracker(tk.Tk):
         self.showMainFrame(start_fresh=False)
         self.selectFilesAndFolders(reload=True)
         
-        self.showMonthlyBreakdown()
+        #self.showSavings()
         #self.destroy()
         
         return
@@ -170,41 +170,45 @@ class FinanceTracker(tk.Tk):
         """Removes all items from a Treeview."""
         tree.delete(*tree.get_children())
     
+    def generateMonthYearList(self, start_date: datetime, end_date: datetime):
+        """
+        Generate a list of (month, year) tuples between two datetime objects.
+        
+        :param start_date: The starting datetime object
+        :param end_date: The ending datetime object
+        :return: List of tuples in the format (month, year)
+        """
+        current_date = datetime(start_date.year, start_date.month, 1)
+        end_date = datetime(end_date.year, end_date.month, 1)
+        
+        month_year_list = []
+    
+        while current_date <= end_date:
+            month_year_list.append((current_date.month, current_date.year))
+            # Move to the next month
+            if current_date.month == 12:
+                current_date = datetime(current_date.year + 1, 1, 1)
+            else:
+                current_date = datetime(current_date.year, current_date.month + 1, 1)
+    
+        return month_year_list
+    
+    def formatMonthYear(self, month, year):
+        """
+        Convert a month and year into the format 'Mon 'YY'.
+        
+        :param month: The month as an integer (1-12)
+        :param year: The year as an integer
+        :return: A string in the format 'Mon 'YY'
+        """
+        return datetime(year, month, 1).strftime("%b '%y")
+    
     def showMonthlyBreakdown(self, event=None):
         """Show Accounts section."""
         
-        def generateMonthYearList(start_date: datetime, end_date: datetime):
-            """
-            Generate a list of (month, year) tuples between two datetime objects.
-            
-            :param start_date: The starting datetime object
-            :param end_date: The ending datetime object
-            :return: List of tuples in the format (month, year)
-            """
-            current_date = datetime(start_date.year, start_date.month, 1)
-            end_date = datetime(end_date.year, end_date.month, 1)
-            
-            month_year_list = []
         
-            while current_date <= end_date:
-                month_year_list.append((current_date.month, current_date.year))
-                # Move to the next month
-                if current_date.month == 12:
-                    current_date = datetime(current_date.year + 1, 1, 1)
-                else:
-                    current_date = datetime(current_date.year, current_date.month + 1, 1)
         
-            return month_year_list
         
-        def formatMonthYear(month, year):
-            """
-            Convert a month and year into the format 'Mon 'YY'.
-            
-            :param month: The month as an integer (1-12)
-            :param year: The year as an integer
-            :return: A string in the format 'Mon 'YY'
-            """
-            return datetime(year, month, 1).strftime("%b '%y")
             
         def monthlyBalances():
             
@@ -303,7 +307,7 @@ class FinanceTracker(tk.Tk):
         
             # Create a popup window
             top = tk.Toplevel(self)
-            text = formatMonthYear(month, year)
+            text = self.formatMonthYear(month, year)
             top.title(f"{text} Account Breakdown")
         
             # Create a Treeview for displaying breakdown data
@@ -424,7 +428,7 @@ class FinanceTracker(tk.Tk):
                 # Apply column order and update headers
                 tree["columns"] = months_list
                 for col in months_list:
-                    tree.heading(col, text=formatMonthYear(col[0], col[1]), anchor=tk.CENTER, command=lambda c=col: showMonthBreakdown(c))
+                    tree.heading(col, text=self.formatMonthYear(col[0], col[1]), anchor=tk.CENTER, command=lambda c=col: showMonthBreakdown(c))
                     tree.column(col, width=column_widths[col], anchor=tk.E, stretch=tk.NO)
             
                 # Clear previous table content
@@ -619,7 +623,7 @@ class FinanceTracker(tk.Tk):
         self.clearMainFrame()
         
         # Define months for table columns
-        self.all_months = generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
+        self.all_months = self.generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
         self.number_of_months_displayed = min(len(self.all_months),12)
         
         # Get initial balances
@@ -634,10 +638,113 @@ class FinanceTracker(tk.Tk):
         return
         
     def showSavings(self, event=None):
-        """Show Spending Breakdown section."""
+        """Displays a savings summary in a Treeview table, allowing analysis by category."""
+
+        # Clear the main frame before populating the table
         self.clearMainFrame()
-        label = ttk.Label(self.main_frame, text="Savings Breakdown", font=("Arial", 14, "bold"))
-        label.pack(pady=20)
+    
+        # Extract required columns
+        df = self.income_data.copy()
+        
+        # Ensure 'Date' column is in datetime format
+        df["Date"] = pd.to_datetime(df["Date"])
+    
+        # Generate months list (Jan '24, Feb '24, ...)
+        months = self.generateMonthYearList(df["Date"].min(), df["Date"].max())
+    
+        # Pivot table: Sum income amounts per category per month
+        summary_df = df.pivot_table(index=df["Date"].dt.to_period("M"),
+                                    columns="Category",
+                                    values="Amount",
+                                    aggfunc="sum").fillna(0)
+    
+        # Format month index as "Jan '24"
+        #summary_df.index = [self.formatMonthYear(mn.year, mn.month) for mn in summary_df.index]
+    
+        # Create Treeview frame
+        frame = ttk.Frame(self.main_frame)
+        frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+    
+        # Define columns: First column for "Month", rest for categories
+        columns = ["Month"] + list(summary_df.columns)
+    
+        # Define Treeview Table
+        tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="none")
+    
+        # Set UI styling
+        style = ttk.Style()
+        style.configure("Treeview", rowheight=30, font=(self.font_type, self.font_size))
+        style.configure("Treeview.Heading", font=(self.font_type, self.font_size, "bold"), background="#4A90E2", foreground="white")
+        style.map("Treeview.Heading", background=[("active", "#3A70C2")])
+        tree.tag_configure("oddrow", background="#f5f5f5")
+        tree.tag_configure("evenrow", background="#ffffff")
+    
+        # Add column headers
+        for col in columns:
+            tree.heading(col, text=col, anchor=tk.CENTER, 
+                         command=lambda c=col: openBreakdownWindow(c, summary_df))
+            width = 160 if col == "Month" else 130
+            tree.column(col, anchor=tk.CENTER, width=width, stretch=tk.NO)
+    
+        # Populate Treeview with data
+        for i, (month, row) in enumerate(summary_df.iterrows()):
+            values = [month] + [f"${val/100:.2f}" for val in row]
+            tag = "oddrow" if i % 2 == 0 else "evenrow"
+            tree.insert('', tk.END, values=values, tags=(tag,))
+    
+        tree.pack(expand=True, fill=tk.BOTH)
+    
+        # Function to open a breakdown analysis window for a category
+        def openBreakdownWindow(category, data):
+            """Opens a new window with a breakdown analysis for the selected category."""
+            if category == "Month":
+                return  # Ignore if "Month" is clicked
+    
+            # Create new window
+            breakdown_window = tk.Toplevel(self)
+            breakdown_window.title(f"Breakdown for {category}")
+            breakdown_window.geometry("600x400")
+    
+            # Filter data for the selected category
+            filtered_df = df[df["Category"] == category]
+    
+            # Perform analysis
+            total_transactions = len(filtered_df)
+            max_transaction = filtered_df["Amount"].max() / 100 if not filtered_df.empty else 0
+            min_transaction = filtered_df["Amount"].min() / 100 if not filtered_df.empty else 0
+            mean_transaction = filtered_df["Amount"].mean() / 100 if not filtered_df.empty else 0
+            median_transaction = filtered_df["Amount"].median() / 100 if not filtered_df.empty else 0
+    
+            # Summary Stats Display
+            summary_frame = ttk.Frame(breakdown_window)
+            summary_frame.pack(fill=tk.X, padx=10, pady=5)
+    
+            ttk.Label(summary_frame, text=f"Category: {category}", font=(self.font_type, self.font_size, "bold")).pack(anchor=tk.W)
+            ttk.Label(summary_frame, text=f"Total Transactions: {total_transactions}").pack(anchor=tk.W)
+            ttk.Label(summary_frame, text=f"Largest Transaction: ${max_transaction:.2f}").pack(anchor=tk.W)
+            ttk.Label(summary_frame, text=f"Smallest Transaction: ${min_transaction:.2f}").pack(anchor=tk.W)
+            ttk.Label(summary_frame, text=f"Mean Transaction: ${mean_transaction:.2f}").pack(anchor=tk.W)
+            ttk.Label(summary_frame, text=f"Median Transaction: ${median_transaction:.2f}").pack(anchor=tk.W)
+    
+            # Create a table for individual transactions
+            tree_frame = ttk.Frame(breakdown_window)
+            tree_frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+    
+            transaction_tree = ttk.Treeview(tree_frame, columns=["Date", "Amount"], show="headings", selectmode="none")
+    
+            # Define columns
+            transaction_tree.heading("Date", text="Date", anchor=tk.CENTER)
+            transaction_tree.heading("Amount", text="Amount", anchor=tk.CENTER)
+            transaction_tree.column("Date", anchor=tk.CENTER, width=120)
+            transaction_tree.column("Amount", anchor=tk.CENTER, width=120)
+    
+            # Insert data
+            for _, row in filtered_df.iterrows():
+                transaction_tree.insert("", tk.END, values=[row["Date"].strftime("%Y-%m-%d"), f"${row['Amount']/100:.2f}"])
+    
+            transaction_tree.pack(expand=True, fill=tk.BOTH)
+    
+        return
     
     def showSpending(self, event=None):
         """Show Spending Breakdown section."""
