@@ -7,3 +7,5 @@ Paycheck
 Refund
 Student Loan Payment
 Transfers
+Transfer from Savings
+Transfer from Checking
