@@ -1305,7 +1305,7 @@ class FinanceTracker(tk.Tk):
         def findMismatchedCategories(df, df_type):
             """Add an asterisk to categories not found in the categories list"""
             cat_list, _ = self.getCategoryTypes(df_type)
-            df['Category'] = df['Category'].astype(str).apply(lambda x: "Not Assigned" if x.strip() not in map(str.strip, map(str, cat_list)) else x)
+            df['Category'] = df['Category'].astype(str).apply(lambda x: f"*{x}" if x.strip() not in map(str.strip, map(str, cat_list)) else x)
             return df
         
         # Check if either of the dataframes are empty for error handling later
@@ -1392,13 +1392,14 @@ class FinanceTracker(tk.Tk):
         """Save function.""" 
         
         with open(self.last_saved_file, 'r') as ff:
-            f = ff.readlines()
+            f = ff.readlines() 
             
         if len(f) == 1:
-            if self.last_saved_file.endswith(".pkl"):
-                self.saveToPickleFile(self.last_saved_file)
-            elif self.last_saved_file.endswith(".xlsx"):
-                self.saveToXLSX(self.last_saved_file)
+            file_name = f[0]
+            if file_name.endswith(".pkl"):
+                self.saveToPickleFile(file_name)
+            elif file_name.endswith(".xlsx"):
+                self.saveToXLSX(file_name)
         elif len(f) == 5:
             self.saveToCSV(f)
         else:
@@ -1409,8 +1410,8 @@ class FinanceTracker(tk.Tk):
     def saveStateAs(self):
         """Save as function."""
         
-        filetypes = [("Pickle Files", "*.pkl"), 
-                     ("Excel Files", "*.xlsx"), 
+        filetypes = [("Excel Files", "*.xlsx"),
+                     ("Pickle Files", "*.pkl"),
                      ("CSV Files", "*.csv")]
         
         file_name = filedialog.asksaveasfilename(title="Select Files", filetypes=filetypes, defaultextension=".xlsx")
