@@ -1038,7 +1038,8 @@ class FinanceTracker(tk.Tk):
             messagebox.showinfo("Success", "Initial balances updated successfully.")
             top.destroy()
             
-            self.showMonthlyBreakdown()
+            if self.current_window == 'Monthly Breakdown':
+                self.showMonthlyBreakdown()
             
         def exitWindow(event=None):
             top.destroy()
@@ -1188,13 +1189,18 @@ class FinanceTracker(tk.Tk):
             df1 = df1.drop(columns=['Category'])
             df1['Date'] = pd.to_datetime(df1['Date'], dayfirst=False, format='mixed').dt.date
             
-            df2 = df2.drop(columns=['Category', 'Index'])
+            for l in ['Category', 'Index']:
+                if l in df2.columns:  
+                    df2 = df2.drop(columns=[l])
             
             return df1.loc[~df1.apply(tuple, axis=1).isin(df2.apply(tuple, axis=1))]
         
         def addNewValuesToDF(df1, df2):
             """Combine df1 and df2 and keep category information"""
-            return pd.concat([df1, df2], ignore_index=True).drop(columns=['Index'])
+            df = pd.concat([df1, df2], ignore_index=True)
+            if 'Index' in df.columns:
+                df = df.drop(columns=['Index'])
+            return df                
         
         # Reading in an updated csv file to add only new info and not lose old category information
         if update and not self.income_data.empty and not self.expenses_data.empty:
@@ -1209,15 +1215,17 @@ class FinanceTracker(tk.Tk):
                     new_inc = compareOldAndNewDF(inc, self.income_data.copy())
                     new_exp = compareOldAndNewDF(exp, self.expenses_data.copy())
                     
-                    self.income_data = addNewValuesToDF(self.income_data.copy(), new_inc)
-                    self.expenses_data = addNewValuesToDF(self.expenses_data.copy(), new_exp)
+                    if not new_inc.empty:
+                        self.income_data = addNewValuesToDF(self.income_data.copy(), new_inc)
+                    if not new_exp.empty:
+                        self.expenses_data = addNewValuesToDF(self.expenses_data.copy(), new_exp)
                     
                 self.current_window = ''
                 self.setupDataFrames()
                     
             return
         
-        #TODO Add comment
+        # Function to reload the last save file
         if reload:
             try:
                 with open(self.last_saved_file, 'r') as f:
@@ -1297,7 +1305,7 @@ class FinanceTracker(tk.Tk):
         def findMismatchedCategories(df, df_type):
             """Add an asterisk to categories not found in the categories list"""
             cat_list, _ = self.getCategoryTypes(df_type)
-            df['Category'] = df['Category'].astype(str).apply(lambda x: f"*{x}" if x.strip() not in map(str.strip, map(str, cat_list)) else x)
+            df['Category'] = df['Category'].astype(str).apply(lambda x: "Not Assigned" if x.strip() not in map(str.strip, map(str, cat_list)) else x)
             return df
         
         # Check if either of the dataframes are empty for error handling later
@@ -1495,7 +1503,6 @@ class FinanceTracker(tk.Tk):
         """Update the last saved file following a successful save"""
         with open(self.last_saved_file, "w") as f:
             f.write(file_name)
-        
         return        
 
     def displayIncExpTables(self, inc, exp):
@@ -1563,68 +1570,82 @@ class FinanceTracker(tk.Tk):
 
             # Get category list
             cat_list, cat_file = self.getCategoryTypes(df_name)    
-        
-            def on_cell_click(event):
-                """Open a dropdown menu when clicking on a 'Category' cell."""
+            
+            def on_cell_double_click(event):
+                """Open a small pop-up window to select a category, positioned next to the clicked cell."""
                 item_id = tree.identify_row(event.y)  # Get clicked row
                 col_id = tree.identify_column(event.x)  # Get clicked column
-        
+            
                 if not item_id or col_id != f"#{columns.index('Category')+1}":  # Ensure it's the 'Category' column
                     return
+            
+                # 
+                row_index = tree.get_children().index(item_id)
+                row_values = tree.item(item_id, "values") 
+                df_index = int(row_values[0])
                 
-                row_index = int(tree.index(item_id))
-                current_value = df.at[row_index, "Category"]
-        
-                # Retrieve selected row values
-                row_values = tree.item(item_id, "values")
-                index_value = int(row_values[0])
-           
-                # Get the current category
-                current_value = df.at[index_value, "Category"]
-        
+                current_value = df.at[df_index, "Category"] 
+            
                 # Get cell coordinates
                 x, y, width, height = tree.bbox(item_id, columns.index("Category"))
-        
-                # Create dropdown menu
-                category_var = tk.StringVar(value=current_value)
-                dropdown = ttk.Combobox(tree, textvariable=category_var, values=cat_list, state="readonly")
-                dropdown.place(x=x, y=y, width=width, height=height)
+            
+                # Get root window coordinates
+                root_x = tree.winfo_rootx()  # X position of Treeview relative to screen
+                root_y = tree.winfo_rooty()  # Y position of Treeview relative to screen
                 
-                # Ensures dropdown opens immediately
-                dropdown.after(10, lambda: dropdown.event_generate("<Button-1>"))  
-                
-                # Destroy dropdown menu after 5 seconds
-                dropdown.after(10000, dropdown.destroy)
-        
-                # Function to update DataFrame on selection
-                def onCategorySelected(event):
-                    """Update the DataFrame when a category is selected."""
-                    new_value = category_var.get()
+                # Assign base values
+                base_x = 210
+                base_y = 80
+            
+                # Compute absolute position for the popup window (to the left of the clicked cell)
+                popup_x = root_x + x - base_x  # Offset by 210px to position it to the left
+                popup_y = root_y + y - 40   # Offset by 40px to position it up
+            
+                # Create popup window
+                popup = tk.Toplevel()
+                popup.title("Select Category")
+                popup.geometry(f"{base_x}x{base_y}+{popup_x}+{popup_y}")  # Position popup at calculated location
+            
+                category_var = tk.StringVar()
+                dropdown = ttk.Combobox(popup, textvariable=category_var, values=cat_list, state="readonly")
+                dropdown.pack(pady=10)
+                dropdown.current(cat_list.index(current_value)) if current_value in cat_list else dropdown.current(0)
+            
+                def saveSelection():
+                    """Save selected category and close popup."""
+                    new_category = category_var.get()
+                    df.at[df_index, "Category"] = new_category
+                    values = [df.at[df_index, col] for col in columns]
+                    values[3] = f"${values[3]/100:.2f}"  # Format amount as currency
+                    tree.item(tree.get_children()[row_index], values=values)
                     
                     if df_name == 'inc':
-                        self.income_data.at[index_value, "Category"] = new_value
-                    else:
-                        self.expenses_data.at[index_value, "Category"] = new_value
-                    
-                    df.at[index_value, "Category"] = new_value  # Update the displayed DataFrame
-                    
-                    values = [df.at[index_value, col] for col in columns]
-                    values[3] = f"${values[3]/100:.2f}"  # Format amount as currency
-                    
-                    tree.item(item_id, values=values)# Update the Treeview
-                    dropdown.destroy()  # Remove the dropdown  
+                        self.income_data.at[df_index, "Category"] = new_category
+                    elif df_name == 'exp':
+                        self.expenses_data.at[df_index, "Category"] = new_category
                     
                     if self.current_sort == 'Category':
                         self.sortIncExpTable(tree, 'Category', df, 0)
+                    
+                    popup.destroy()
+                    
+                def exitWindow(event=None):
+                    popup.destroy()
                 
-                # Bind events        
-                dropdown.bind("<<ComboboxSelected>>", onCategorySelected)
+                # Bind Enter and Escape keys
+                popup.bind("<Return>", saveSelection) 
+                popup.bind("<Escape>", exitWindow)
+            
+                # Add Save Button
+                save_button = tk.Button(popup, text="Save", command=saveSelection)
+                save_button.pack(pady=5)
                 
-                # Focus on dropdown
-                dropdown.focus_set()  
-        
-            # Bind the table click event to open the dropdown
-            tree.bind("<Button-1>", on_cell_click)
+                dropdown.focus_set()
+            
+                popup.mainloop()
+            
+            # Bind double-click event
+            tree.bind("<Double-Button-1>", on_cell_double_click)
             
             # Bind right-click event to show column menu
             tree.bind("<Button-3>", lambda event: self.showColumnMenu(event, tree, df, df_name))
@@ -1636,9 +1657,9 @@ class FinanceTracker(tk.Tk):
             
         self.clearMainFrame()
         if self.hide_index:
-            self.geometry("1043x650")
+            self.geometry("1073x650")
         else:
-            self.geometry("1103x650")
+            self.geometry("1133x650")
         
         # Make sure the parent frame's column is expandable
         self.main_frame.grid_columnconfigure(0, weight=1)
@@ -1983,7 +2004,7 @@ class FinanceTracker(tk.Tk):
             canvas.bind("<Button-4>", on_scroll)  # Mac/Linux
             canvas.bind("<Button-5>", on_scroll)
         
-            # **Display checkboxes for each account/category**
+            # Display checkboxes for each account/category
             checkbox_widgets = {}
             for acc in unique_vals:
                 var = tk.BooleanVar(value=True)
@@ -1991,12 +2012,12 @@ class FinanceTracker(tk.Tk):
                 cb = ttk.Checkbutton(checkbox_frame, text=acc, variable=var, style="TCheckbutton")
                 cb.pack(anchor="w", padx=5, pady=2, fill="x")  # Ensures proper alignment
         
-            # **Fix for white space issue**: Adjust canvas height dynamically
+            # Adjust canvas height dynamically
             checkbox_frame.update_idletasks()  # Update to get correct dimensions
             frame_height = checkbox_frame.winfo_reqheight()  # Get actual height
             canvas.configure(scrollregion=(0, 0, window_width, frame_height))  # Adjust scroll area
         
-            # **Ensure Confirm Button Always Appears**
+            # Ensure Confirm Button Always Appears
             button_frame = ttk.Frame(container)
             button_frame.pack(fill="x", padx=5, pady=(5, 10))  # Keep at the bottom
         
