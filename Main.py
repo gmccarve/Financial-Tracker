@@ -7,6 +7,8 @@ from tkinter import ttk, filedialog, messagebox
 from tkcalendar import Calendar
 from datetime import date
 import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+from matplotlib.text import OffsetFrom
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import calendar
@@ -29,6 +31,8 @@ class FinanceTracker(tk.Tk):
         
         self.startFresh(on_start=True)
         self.initUI()
+        
+        self.showMonthlyBreakdown()
         
         return
 
@@ -290,7 +294,7 @@ class FinanceTracker(tk.Tk):
             return account_summary
         
         def showMonthBreakdown(month_name):
-            """Display a breakdown of all account statistics for the selected month."""
+            """Display a breakdown of all account statistics for the selected month, with an interactive plot."""
             
             # Precompute monthly transactions using `groupby`
             def computeMonthlyStats(df):
@@ -333,9 +337,7 @@ class FinanceTracker(tk.Tk):
                  "Net Cash Flow": 150, "Ending Balance": 150, "Savings Rate (%)": 150}
             
             # get minimum size of window
-            window_width = 10
-            for k, v in column_widths.items():
-                window_width += v
+            window_width = sum(column_widths.values()) + 20
                         
             for col in tree["columns"]:
                 tree.heading(col, text=col, anchor=tk.CENTER)
@@ -396,12 +398,213 @@ class FinanceTracker(tk.Tk):
                 tree.tag_configure("oddrow",    background=self.banded_row[0])  # Light gray
                 tree.tag_configure("evenrow",   background=self.banded_row[1])  # White
                 
-            window_height = count * 30
-            
-            self.openRelativeWindow(top, width=window_width, height=window_height)
-            top.resizable(False, False)
                 
-            tree.pack(expand=True, fill=tk.BOTH)
+            """Plot the data for a selected account"""
+            
+            # Track the account currently being plotted
+            self.selected_account = None
+            
+            # Extract accounts
+            account_list = list(account_summary["Account"].dropna().unique())
+            account_list = [element for element in account_list if element]
+            
+            # Create a Combobox for account selection
+            account_var = tk.StringVar()
+            account_dropdown = ttk.Combobox(top, textvariable=account_var, values=account_list, state="readonly")
+            
+            # Create Matplotlib Figure
+            fig, ax = plt.subplots(figsize=(7, 3))
+            canvas = FigureCanvasTkAgg(fig, master=top)
+            plot_widget = canvas.get_tk_widget() 
+            
+            def plotAccountBalance(account_name):
+                """Plot the account balance over the month with step-like changes."""
+                ax.clear()
+                
+                if account_name not in account_summary["Account"].values:
+                    return
+                
+                if "TOTAL" in account_name:
+                    return  # TODO: Handle totals differently if needed
+            
+                # Filter data for the selected account
+                account_data = account_summary[account_summary["Account"] == account_name].iloc[:, 1:]
+                
+                inc_values = income_totals[income_totals['Account'] == account_name]
+                exp_values = expense_totals[expense_totals['Account'] == account_name]
+                exp_values = exp_values.assign(Amount=exp_values['Amount'] * -1)
+                
+                all_data = pd.concat([inc_values, exp_values]).sort_values(by=['Date'])
+                all_values = all_data['Amount']
+                
+                # Compute cumulative sum
+                cum_values = np.cumsum(all_values.values)
+                
+                # Calculate starting balance for the month
+                starting_balance = (cum_values[-1] - account_data[month_name].tolist()[0]) * -1
+                balances = (cum_values + starting_balance) / 100  # Convert to dollars
+                
+                all_dates = all_data['Date'].tolist()
+            
+                # Convert data into a step-plot format
+                step_dates      = []
+                step_balances   = []
+                step_values     = [] 
+                
+                # Start with the initial balance before the first transaction
+                step_dates.append(all_dates[0])
+                step_balances.append(starting_balance / 100)  # Convert cents to dollars
+                step_values.append({"Date": all_dates[0], "Amount": 0, "Balance": step_balances[-1]})
+                
+                for i in range(len(all_dates)):
+                    # Horizontal step (before transaction)
+                    step_dates.append(all_dates[i])
+                    step_balances.append(step_balances[-1])  # Balance before transaction
+                    step_values.append({"Date": all_dates[i], 
+                                        "Description": all_data.iloc[i]['Description'],
+                                        "Category": all_data.iloc[i]['Category'],
+                                        "Amount": all_data.iloc[i]['Amount'] / 100, 
+                                        "Balance": step_balances[-1]})
+                    
+                    # Vertical step (transaction occurs)
+                    step_dates.append(all_dates[i])
+                    step_balances.append(balances[i])  # Balance after transaction
+                    step_values.append({"Date": all_dates[i], 
+                                        "Description": all_data.iloc[i]['Description'],
+                                        "Category": all_data.iloc[i]['Category'],
+                                        "Amount": all_data.iloc[i]['Amount'] / 100, 
+                                        "Balance": balances[i]})
+                
+                # Step-like plot with horizontal and vertical lines
+                line, = ax.plot(step_dates, step_balances, marker="o", linestyle="-", label=account_name, color="blue")
+            
+                # Set x-axis ticks to match transaction dates
+                ax.set_xticks(all_dates)
+                ax.set_xticklabels([date.strftime("%d") for date in all_dates], rotation=45)  # Show only day numbers
+                
+                ax.set_ylabel("Balance ($)")
+                ax.set_title(f"{account_name} - Monthly Balance")
+                ax.grid(True, linestyle="--", alpha=0.6)  # Add a subtle grid
+                
+                canvas.draw()
+                
+                # Create annotation (tooltip)
+                annot = ax.annotate("", xy=(0, 0), xytext=(20, 20), textcoords="offset points",
+                                    bbox=dict(boxstyle="round, pad=0.3", fc="white", ec="black"),  # Light bg, black border
+                                    arrowprops=dict(arrowstyle="->", color="black"),  # Subtle arrow
+                                    fontsize=self.font_size-3, color="black", horizontalalignment='left')
+                annot.set_visible(False)
+                
+                def updateAnnot(x, y, trans_data):
+                    """Update tooltip position and text."""
+                    annot.xy = (x, y)
+                    
+                    new_line = "\n"
+                    try:
+                        text = f"Date: {trans_data['Date'].strftime('%Y-%m-%d')}{new_line}" \
+                               f"Description: {trans_data['Description']}{new_line}" \
+                               f"Category: {trans_data['Category']}{new_line}" \
+                               f"Amount: ${trans_data['Amount']:,.2f}{new_line}" \
+                               f"Balance: ${trans_data['Balance']:,.2f}"
+                    except:
+                        text = f"Date: {trans_data['Date'].strftime('%Y-%m-%d')}{new_line}" \
+                               f"Balance: ${trans_data['Balance']:,.2f}"
+                    annot.set_text(text)
+
+                    annot.set_visible(True)
+                
+                def onHover(event):
+                    """Show tooltip when hovering over a data point, treating X and Y distances separately."""
+                    if event.inaxes != ax:
+                        annot.set_visible(False)
+                        canvas.draw_idle()
+                        return
+                
+                    x_cursor, y_cursor = event.xdata, event.ydata
+                
+                    if x_cursor is None or y_cursor is None:
+                        annot.set_visible(False)
+                        canvas.draw_idle()
+                        return
+                
+                    # Get y-axis limits for dynamic thresholding
+                    y_min, y_max = ax.get_ylim()
+                    
+                    # Set separate distance thresholds
+                    x_threshold = 0.1  # Allow wider X-axis tolerance
+                    y_threshold = 0.01 * (y_max - y_min)  # Dynamic Y-axis sensitivity
+                
+                    # Find closest point
+                    min_x_dist = float("inf")
+                    min_y_dist = float("inf")
+                    closest_index = -1
+                
+                    for i, (x, y) in enumerate(zip(line.get_xdata(), line.get_ydata())):
+                        x_date_num = mdates.date2num(x)  # Convert datetime to numerical format
+                        x_dist = abs(x_date_num - x_cursor)  # X-axis distance
+                        y_dist = abs(y - y_cursor)  # Y-axis distance
+                        
+                        if x_dist < x_threshold and y_dist < y_threshold:  # Both must be within range
+                            if x_dist < min_x_dist and y_dist < min_y_dist:
+                                min_x_dist = x_dist
+                                min_y_dist = y_dist
+                                closest_index = i
+                
+                    if closest_index != -1:
+                        trans_data = step_values[closest_index]  # Get transaction data
+                        updateAnnot(line.get_xdata()[closest_index], line.get_ydata()[closest_index], trans_data)
+                        annot.set_visible(True)
+                    else:
+                        annot.set_visible(False)
+                
+                    canvas.draw_idle()
+                    
+                # Connect hover event
+                canvas.mpl_connect("motion_notify_event", onHover)
+            
+            def onAccountSelect(event):
+                """Update the plot when an account is clicked in the table."""
+                selected_item = tree.focus()
+                if selected_item:
+                    selected_account = tree.item(selected_item, "values")[0]  # Get selected account name
+                    account_var.set(selected_account)  # Update combobox
+                    plotAccountBalance(selected_account)
+            
+            def onDropdownSelect(event):
+                """Update the plot when the account is changed via dropdown."""
+                selected_account = account_var.get()
+                plotAccountBalance(selected_account)
+            
+            # Bind events
+            tree.bind("<ButtonRelease-1>", onAccountSelect)
+            account_dropdown.bind("<<ComboboxSelected>>", onDropdownSelect)
+            
+            # Display first account data by default
+            if account_list:
+                self.selected_account = account_list[0]
+                account_var.set(self.selected_account)
+                plotAccountBalance(self.selected_account)
+        
+            # Table (Treeview) - occupies full width
+            tree.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
+            
+            # Combobox - centered, does NOT stretch full width
+            account_dropdown.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+            
+            # Plot - spans across all columns (so it aligns well)
+            plot_widget.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
+        
+            # Configure column resizing
+            top.grid_columnconfigure(0, weight=1)  # Left empty space
+            top.grid_columnconfigure(1, weight=0)  # Combobox (fixed width)
+            top.grid_columnconfigure(2, weight=1)  # Right empty space
+            top.grid_rowconfigure(0, weight=1)  # Table expands
+            top.grid_rowconfigure(2, weight=2)  # Plot expand
+        
+            # Resize window dynamically
+            window_height = len(account_summary) * 32 + 250
+            self.openRelativeWindow(top, width=window_width, height=window_height)
+            top.resizable(True, True)
             
             def exitWindow(event=None):
                 top.destroy()
@@ -1665,27 +1868,31 @@ class FinanceTracker(tk.Tk):
                 total_fixed_width = sum(column_widths.values())
                 scale_factor = new_width / total_fixed_width
                 
-                # Adjust column width dynamically based on window width
-                if event is None or new_width != self.all_data_window_width:
-                    self.all_data_window_width = new_width            
-                    for tree in [self.expenses_data_tree, self.income_data_tree]:
-                        if tree:
-                            for col in tree["columns"]:
-                                width = int(column_widths.get(col, 120) * scale_factor )
-                                tree.column(col, width=width)
-            
-                # Adjust row count dynamically based on window height
-                if event is None or new_height != self.all_data_window_height:
-                    self.all_data_window_height = new_height
-                    min_rows = 5
-                    max_rows = 25
-                    row_height = 35
-                    new_row_count = int(max(min_rows, min(max_rows, new_height // row_height)) // 2)
-            
-                    for tree in [self.expenses_data_tree, self.income_data_tree]:
-                        if tree:
-                            tree.config(height=new_row_count)
-            
+                try:
+                
+                    # Adjust column width dynamically based on window width
+                    if event is None or new_width != self.all_data_window_width:
+                        self.all_data_window_width = new_width            
+                        for tree in [self.expenses_data_tree, self.income_data_tree]:
+                            if tree:
+                                for col in tree["columns"]:
+                                    width = int(column_widths.get(col, 120) * scale_factor )
+                                    tree.column(col, width=width)
+                
+                    # Adjust row count dynamically based on window height
+                    if event is None or new_height != self.all_data_window_height:
+                        self.all_data_window_height = new_height
+                        min_rows = 5
+                        max_rows = 25
+                        row_height = 35
+                        new_row_count = int(max(min_rows, min(max_rows, new_height // row_height)) // 2)
+                
+                        for tree in [self.expenses_data_tree, self.income_data_tree]:
+                            if tree:
+                                tree.config(height=new_row_count)
+                except:
+                    pass
+                
                 self.update_idletasks()
             
             # Bind the function to window resizing
