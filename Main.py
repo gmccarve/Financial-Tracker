@@ -1519,19 +1519,33 @@ class FinanceTracker(tk.Tk):
 
             # Create a frame with padding for aesthetics
             frame = ttk.Frame(self.main_frame, padding=5)
-            frame.grid(row=row, column=0, sticky='w', pady=2)
+            frame.grid(row=row, column=0, sticky='nsew', pady=2)
+            
+            # Ensure frame expands properly
+            self.main_frame.grid_rowconfigure(row, weight=1)
+            self.main_frame.grid_columnconfigure(0, weight=1)
         
             columns = list(df.columns)
             tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse")
+            
+            if df_name == 'inc':
+                self.income_data_tree = tree
+            else:
+                self.expenses_data_tree = tree
             
             self.clearTreeview(tree)
             
             # Create Scrollbars
             y_scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
             tree.configure(yscrollcommand=y_scrollbar.set)
-            y_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-            tree.pack(expand=True, fill=tk.BOTH)
+            
+            # Set configuration on screen with grid
+            y_scrollbar.grid(row=0, column=1, sticky='ns')
+            tree.grid(row=0, column=0, sticky='nsew')
+            
+            # Make sure frame columns and rows expand with the window
+            frame.grid_columnconfigure(0, weight=1)
+            frame.grid_rowconfigure(0, weight=1)
         
             # Define preset column widths
             column_widths = {
@@ -1566,8 +1580,6 @@ class FinanceTracker(tk.Tk):
                 values[3] = f"${values[3]/100:.2f}"  # Format amount as currency
                 tag = "oddrow" if tag == "evenrow" else "evenrow"
                 tree.insert('', tk.END, values=values, tags=(tag,))
-        
-            tree.pack(expand=True, fill=tk.BOTH)
 
             # Get category list
             cat_list, cat_file = self.getCategoryTypes(df_name)    
@@ -1644,6 +1656,41 @@ class FinanceTracker(tk.Tk):
                 dropdown.focus_set()
             
                 popup.mainloop()
+                
+            def update_table_sizes(event):
+                """Dynamically adjust the table sizes for both income and expense tables."""
+    
+                new_width = self.winfo_width()
+                new_height = self.winfo_height()
+                
+                total_fixed_width = sum(column_widths.values())
+                scale_factor = new_width / total_fixed_width
+                
+                # Adjust column width dynamically based on window width
+                if event is None or new_width != self.all_data_window_width:
+                    self.all_data_window_width = new_width            
+                    for tree in [self.expenses_data_tree, self.income_data_tree]:
+                        if tree:
+                            for col in tree["columns"]:
+                                width = int(column_widths.get(col, 120) * scale_factor )
+                                tree.column(col, width=width)
+            
+                # Adjust row count dynamically based on window height
+                if event is None or new_height != self.all_data_window_height:
+                    self.all_data_window_height = new_height
+                    min_rows = 5
+                    max_rows = 25
+                    row_height = 35
+                    new_row_count = int(max(min_rows, min(max_rows, new_height // row_height)) // 2)
+            
+                    for tree in [self.expenses_data_tree, self.income_data_tree]:
+                        if tree:
+                            tree.config(height=new_row_count)
+            
+                self.update_idletasks()
+            
+            # Bind the function to window resizing
+            self.bind("<Configure>", update_table_sizes)
             
             # Bind double-click event
             tree.bind("<Double-Button-1>", on_cell_double_click)
@@ -1651,24 +1698,37 @@ class FinanceTracker(tk.Tk):
             # Bind right-click event to show column menu
             tree.bind("<Button-3>", lambda event: self.showColumnMenu(event, tree, df, df_name))
             
+            update_table_sizes(event=None)
+            
             return
         
         if self.current_window == 'All Data':
             return
             
         self.clearMainFrame()
+        
+        self.all_data_window_height = 650
+        
         if self.hide_index:
-            self.geometry("1073x650")
+            self.all_data_window_width = 1073
         else:
-            self.geometry("1133x650")
+            self.all_data_window_width = 1133
+            
+        self.geometry(f"{self.all_data_window_width}x{self.all_data_window_height}")
         
         # Make sure the parent frame's column is expandable
         self.main_frame.grid_columnconfigure(0, weight=1)
         
+        # Set up both trees for size updating
+        self.expenses_data_tree = None
+        self.income_data_tree = None
+        
+        # Populate the expenses tree/table
         expenses_label = ttk.Label(self.main_frame, text="EXPENSES", font=(self.font_type, self.font_size+2, "bold"))
         expenses_label.grid(row=0, column=0, sticky="n", pady=2)
         showTable(exp.copy(), 'exp')
         
+        # Populate teh income tree/table
         expenses_label = ttk.Label(self.main_frame, text="INCOME", font=(self.font_type, self.font_size+2, "bold"))
         expenses_label.grid(row=2, column=0, sticky="n", pady=2)
         showTable(inc.copy(), 'inc')
