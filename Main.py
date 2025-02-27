@@ -20,7 +20,6 @@ class FinanceTracker(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Personal Finance Tracker")
-        self.geometry("1043x650")
         self.resizable(True, True)
         
         self.protocol("WM_DELETE_WINDOW", self.onClose)
@@ -145,7 +144,8 @@ class FinanceTracker(tk.Tk):
         self.font_type = 'calibri'
         self.font_size = 12
         
-        self.banded_row = ["#f5f5f5", "#ffffff"]
+        self.banded_row = ["#e6f2ff", "#ffffff"]
+        self.background_color = "#dce7f5"
         
         if on_start == False:
             self.clearMainFrame()
@@ -161,11 +161,10 @@ class FinanceTracker(tk.Tk):
         #        self.saveState()
         self.destroy()
         
-    def goodLookingTables(self, table_tree):
+    def goodLookingTables(self, style):
         """Make any table look good from treeview"""
-        table_tree.configure("Treeview", rowheight=25, font=(self.font_type, self.font_size))  # Set row height and font
-        table_tree.configure("Treeview.Heading", font=(self.font_type, self.font_size+1, "bold"))  # Bold headers
-        table_tree.map("Treeview", background=[("selected", "#cce5ff"), ("active", "#3A70C2")])  # Highlight selected row
+        style.configure("Treeview", rowheight=25, font=(self.font_type, self.font_size))  # Set row height and font
+        style.configure("Treeview.Heading", font=(self.font_type, self.font_size+1, "bold"))  # Bold headers
         
         return
     
@@ -1638,7 +1637,7 @@ class FinanceTracker(tk.Tk):
                         self.expenses_data.at[df_index, "Category"] = new_category
                     
                     if self.current_sort == 'Category':
-                        self.sortIncExpTable(tree, 'Category', df, 0)
+                        self.sortIncExpTable(tree, 'Category', df, False)
                     
                     popup.destroy()
                     
@@ -2251,8 +2250,8 @@ class FinanceTracker(tk.Tk):
         menu = tk.Menu(self, tearoff=0)
         
         if col_name != 'Index':
-            menu.add_command(label=f"Sort {col_name} Ascending", command=lambda: self.sortIncExpTable(table, col_name, df.copy, True))
-            menu.add_command(label=f"Sort {col_name} Descending", command=lambda: self.sortIncExpTable(table, col_name, df.copy, False))
+            menu.add_command(label=f"Sort {col_name} Ascending", command=lambda: self.sortIncExpTable(table, col_name, df, True))
+            menu.add_command(label=f"Sort {col_name} Descending", command=lambda: self.sortIncExpTable(table, col_name, df, False))
         
         if col_name == 'Index':
             """Sort and high index column"""
