@@ -32,7 +32,7 @@ class FinanceTracker(tk.Tk):
         self.startFresh(on_start=True)
         self.initUI()
         
-        self.showMonthlyBreakdown()
+        #self.showMonthlyBreakdown()
         
         return
 
@@ -130,8 +130,10 @@ class FinanceTracker(tk.Tk):
         self.new_amount_range = self.amount_range.copy()
         self.accounts = []
         self.new_accounts = self.accounts.copy()
-        self.categories = []
-        self.new_categories = self.categories.copy()
+        self.inc_categories = []
+        self.exp_categories = []
+        self.new_inc_categories = self.inc_categories.copy()
+        self.new_exp_categories = self.exp_categories.copy()
         
         self.last_saved_file = os.path.join(os.path.dirname(__file__), "lastSavedFile.txt")
            
@@ -305,10 +307,12 @@ class FinanceTracker(tk.Tk):
             
             def getStartingBalance(account, month, year):
                 """Retrieve the starting balance of an account for a given month.""" 
-                print (month, year, account)
                 if month == self.date_range[0].month and year == self.date_range[0].year:
                     if "TOTAL" in account:
-                        return initial_balances.filter(like='Checking').sum().sum()
+                        keyword = account.replace("TOTAL ", "").title()
+                        list_of_keyword_accounts = [col for col in initial_balances.columns if keyword in col]
+                        vals = initial_balances[list_of_keyword_accounts].sum().sum()
+                        return vals
                     else:
                         return initial_balances[account].tolist()[0]
                 else:
@@ -367,7 +371,7 @@ class FinanceTracker(tk.Tk):
                 # Alternating row colors for readability
                 tag = "oddrow" if tag == "evenrow" else "evenrow"
                 if "TOTAL" in account:
-                    tag = "totalrow"
+                    continue
                 
                 if account != "":
                 
@@ -1698,6 +1702,13 @@ class FinanceTracker(tk.Tk):
         
         self.new_accounts = self.accounts.copy()
         
+        # Determine list of categories:
+        self.inc_categories, _ = self.getCategoryTypes(name='inc')
+        self.exp_categories, _ = self.getCategoryTypes(name='exp')
+        
+        self.new_inc_categories = self.inc_categories.copy()
+        self.new_exp_categories = self.exp_categories.copy()        
+        
         # Fill in empty entries in the Category column 
         self.income_data["Category"]    = self.income_data["Category"].replace(["", None, np.nan], "Not Assigned")
         self.expenses_data["Category"]  = self.expenses_data["Category"].replace(["", None, np.nan], "Not Assigned")
@@ -1996,7 +2007,7 @@ class FinanceTracker(tk.Tk):
                 new_height = self.winfo_height()
                 
                 total_fixed_width = sum(column_widths.values())
-                scale_factor = new_width / total_fixed_width
+                scale_factor = new_width / total_fixed_width * 0.98
                 
                 try:
                 
@@ -2113,11 +2124,15 @@ class FinanceTracker(tk.Tk):
                     inc_data_copy = inc_data_copy[inc_data_copy[col].between(ranges[0][0]*100, ranges[0][1]*100)]
                     exp_data_copy = exp_data_copy[exp_data_copy[col].between(ranges[1][0]*100, ranges[1][1]*100)]
                 
-        for v, values in enumerate([self.new_accounts, self.new_categories]):
+        for v, values in enumerate([self.new_accounts, [self.new_inc_categories, self.new_exp_categories]]):
             if values:
                 col = inc_data_copy.columns[r+v+1]
-                inc_data_copy = inc_data_copy[inc_data_copy[col].isin(values)]
-                exp_data_copy = exp_data_copy[exp_data_copy[col].isin(values)]
+                if v == 0:
+                    inc_data_copy = inc_data_copy[inc_data_copy[col].isin(values)]
+                    exp_data_copy = exp_data_copy[exp_data_copy[col].isin(values)]
+                else:
+                   inc_data_copy = inc_data_copy[inc_data_copy[col].isin(values[0])]
+                   exp_data_copy = exp_data_copy[exp_data_copy[col].isin(values[1])]
                 
         inc_data_copy = inc_data_copy.reset_index(drop=True) 
         exp_data_copy = exp_data_copy.reset_index(drop=True) 
@@ -2427,7 +2442,10 @@ class FinanceTracker(tk.Tk):
                     if type_of_filter == 'acc':
                         self.new_accounts = selected
                     elif type_of_filter == 'cat':
-                        self.new_categories = selected
+                        if df_name == 'inc':
+                            self.new_inc_categories = selected
+                        else:
+                            self.new_exp_categories = selected
                     self.current_window = ''
                     self.redisplayDataFrameTable()  # Refresh display
                 else:
