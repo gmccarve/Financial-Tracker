@@ -148,7 +148,7 @@ class FinanceTracker(tk.Tk):
         self.font_type = 'calibri'
         self.font_size = 12
         
-        self.banded_row = ["#e6f2ff", "#ffffff"]
+        self.banded_row = ["#e6f2ff", "#ffffff", '#D3D3D3']
         self.background_color = "#dce7f5"
         
         if on_start == False:
@@ -305,8 +305,12 @@ class FinanceTracker(tk.Tk):
             
             def getStartingBalance(account, month, year):
                 """Retrieve the starting balance of an account for a given month.""" 
+                print (month, year, account)
                 if month == self.date_range[0].month and year == self.date_range[0].year:
-                    return initial_balances[account].tolist()[0]
+                    if "TOTAL" in account:
+                        return initial_balances.filter(like='Checking').sum().sum()
+                    else:
+                        return initial_balances[account].tolist()[0]
                 else:
                     if month == 1:
                         m, y = 12, year-1
@@ -333,8 +337,13 @@ class FinanceTracker(tk.Tk):
             self.goodLookingTables(style)
         
             # Column settings
-            column_widths = {"Account": 180, "Start Balance": 150, "Total Income": 150, "Total Expenses": 150, 
-                 "Net Cash Flow": 150, "Ending Balance": 150, "Savings Rate (%)": 150}
+            column_widths = {"Account": 180, 
+                             "Start Balance": 150, 
+                             "Total Income": 150, 
+                             "Total Expenses": 150, 
+                             "Net Cash Flow": 150, 
+                             "Ending Balance": 150, 
+                             "Savings Rate (%)": 150}
             
             # get minimum size of window
             window_width = sum(column_widths.values()) + 20
@@ -357,8 +366,10 @@ class FinanceTracker(tk.Tk):
                 
                 # Alternating row colors for readability
                 tag = "oddrow" if tag == "evenrow" else "evenrow"
+                if "TOTAL" in account:
+                    tag = "totalrow"
                 
-                if account != "" and "TOTAL" not in account:
+                if account != "":
                 
                     inc_values = income_totals[income_totals['Account'] == account]
                     exp_values = expense_totals[expense_totals['Account'] == account]
@@ -387,18 +398,16 @@ class FinanceTracker(tk.Tk):
                                         f"{savings_rate:.2f}%" if savings_rate != "N/A" else "N/A"], 
                                 tags=(tag,))
                     
-                elif "TOTAL" in account and "OTHER" not in account and "RETIREMENT" not in account:
-                    tree.insert("", tk.END, values=[""]*7)
+                    count += 1
+                    
                 else:
-                    continue
-                
-                count += 1
+                    tree.insert("", tk.END, values=[""]*7)
         
                 # Apply row styles
-                tree.tag_configure("oddrow",    background=self.banded_row[0])  # Light gray
-                tree.tag_configure("evenrow",   background=self.banded_row[1])  # White
-                
-                
+                tree.tag_configure("oddrow",    background=self.banded_row[0])
+                tree.tag_configure("evenrow",   background=self.banded_row[1])
+                tree.tag_configure("totalrow", font=(self.font_type, self.font_size, "bold"), background=self.banded_row[2])  # Light blue for totals
+   
             """Plot the data for a selected account"""
             
             # Track the account currently being plotted
@@ -408,14 +417,18 @@ class FinanceTracker(tk.Tk):
             account_list = list(account_summary["Account"].dropna().unique())
             account_list = [element for element in account_list if element]
             
-            # Create a Combobox for account selection
-            account_var = tk.StringVar()
-            account_dropdown = ttk.Combobox(top, textvariable=account_var, values=account_list, state="readonly")
-            
             # Create Matplotlib Figure
             fig, ax = plt.subplots(figsize=(7, 3))
             canvas = FigureCanvasTkAgg(fig, master=top)
-            plot_widget = canvas.get_tk_widget() 
+            plot_widget = canvas.get_tk_widget()
+            
+            # Add the Matplotlib Toolbar
+            toolbar = NavigationToolbar2Tk(canvas, top, pack_toolbar=False)
+            toolbar.update()
+            
+            # Store original y-axis limits before modifying the plot
+            original_xlim = ax.get_xlim()
+            original_ylim = ax.get_ylim()
             
             def plotAccountBalance(account_name):
                 """Plot the account balance over the month with step-like changes."""
@@ -423,16 +436,18 @@ class FinanceTracker(tk.Tk):
                 
                 if account_name not in account_summary["Account"].values:
                     return
-                
-                if "TOTAL" in account_name:
-                    return  # TODO: Handle totals differently if needed
-            
+
                 # Filter data for the selected account
-                account_data = account_summary[account_summary["Account"] == account_name].iloc[:, 1:]
+                if account_name == '':
+                    return
+                elif "TOTAL" in account_name:
+                    return
+                else:
+                    account_data = account_summary[account_summary["Account"] == account_name].iloc[:, 1:]
                 
-                inc_values = income_totals[income_totals['Account'] == account_name]
-                exp_values = expense_totals[expense_totals['Account'] == account_name]
-                exp_values = exp_values.assign(Amount=exp_values['Amount'] * -1)
+                    inc_values = income_totals[income_totals['Account'] == account_name]
+                    exp_values = expense_totals[expense_totals['Account'] == account_name]
+                    exp_values = exp_values.assign(Amount=exp_values['Amount'] * -1)
                 
                 all_data = pd.concat([inc_values, exp_values]).sort_values(by=['Date'])
                 all_values = all_data['Amount']
@@ -442,7 +457,15 @@ class FinanceTracker(tk.Tk):
                 
                 # Calculate starting balance for the month
                 starting_balance = (cum_values[-1] - account_data[month_name].tolist()[0]) * -1
-                balances = (cum_values + starting_balance) / 100  # Convert to dollars
+                starting_date = datetime(month_name[1], month_name[0], 1)
+                
+                #update given starting balance
+                balances = (cum_values + starting_balance) / 100.  # Convert to dollars
+                
+                # Get last day of month                
+                ending_balance = balances[-1]
+                last_day = calendar.monthrange(month_name[1], month_name[0])[1]
+                ending_date = datetime(month_name[1], month_name[0], last_day).date()
                 
                 all_dates = all_data['Date'].tolist()
             
@@ -451,36 +474,75 @@ class FinanceTracker(tk.Tk):
                 step_balances   = []
                 step_values     = [] 
                 
-                # Start with the initial balance before the first transaction
-                step_dates.append(all_dates[0])
-                step_balances.append(starting_balance / 100)  # Convert cents to dollars
-                step_values.append({"Date": all_dates[0], "Amount": 0, "Balance": step_balances[-1]})
+                # Start with the initial balance before the first transaction                
+                ax.scatter(starting_date, starting_balance / 100., color='black', marker='x', s=50, zorder=3)
+                
+                step_dates.append(starting_date)
+                step_balances.append(starting_balance/100.)  # Balance after transaction
+                step_values.append({"Date": starting_date, 
+                                    "Description": "Starting Balance", 
+                                    "Balance": starting_balance / 100.})
                 
                 for i in range(len(all_dates)):
                     # Horizontal step (before transaction)
-                    step_dates.append(all_dates[i])
-                    step_balances.append(step_balances[-1])  # Balance before transaction
-                    step_values.append({"Date": all_dates[i], 
-                                        "Description": all_data.iloc[i]['Description'],
-                                        "Category": all_data.iloc[i]['Category'],
-                                        "Amount": all_data.iloc[i]['Amount'] / 100, 
-                                        "Balance": step_balances[-1]})
+                    date        = all_data.iloc[i]['Date']
+                    value       = all_data.iloc[i]['Amount'] / 100.
+                    description = all_data.iloc[i]['Description']
+                    category    = all_data.iloc[i]['Category']
+                    
+                    new_amount = balances[i]
+                    
+                    if value < 0.0:
+                        color = 'red'
+                    else:
+                        color = 'blue'
+                        
+                    if i == 0:
+                        old_value = starting_balance / 100.
+                        old_date = starting_date
+                    else:
+                        old_value = balances[i-1]
+                        old_date = all_data.iloc[i-1]['Date']
                     
                     # Vertical step (transaction occurs)
+                    ax.plot([date, date], [old_value, new_amount], linestyle='-', color=color)
+                    
+                    # Horizontal step (date change)
+                    if date != old_date and i < len(all_dates):
+                        ax.plot([old_date, date], [old_value, old_value], linestyle='-', color='purple')
+                        
+                    ax.scatter(date, new_amount, color=color, marker='o', s=50, zorder=4)
+                    
+                    
                     step_dates.append(all_dates[i])
                     step_balances.append(balances[i])  # Balance after transaction
-                    step_values.append({"Date": all_dates[i], 
-                                        "Description": all_data.iloc[i]['Description'],
-                                        "Category": all_data.iloc[i]['Category'],
-                                        "Amount": all_data.iloc[i]['Amount'] / 100, 
-                                        "Balance": balances[i]})
+                    step_values.append({"Date": date, 
+                                        "Description": description,
+                                        "Category": category, 
+                                        "Amount": value, 
+                                        "Balance": new_amount})
+                                    
+                # End with the ending balance after the last transaction
+                ax.plot([date, ending_date], [ending_balance, ending_balance], linestyle='-', color='purple')
+                step_dates.append(ending_date)
+                step_balances.append(ending_balance)  # Balance after transaction
+                step_values.append({"Date": ending_date, 
+                                    "Description": "Final Balance", 
+                                    "Balance": ending_balance})
+                ax.scatter(ending_date, ending_balance, color='black', marker='x', s=50, zorder=3)
                 
                 # Step-like plot with horizontal and vertical lines
-                line, = ax.plot(step_dates, step_balances, marker="o", linestyle="-", label=account_name, color="blue")
+                line, = ax.plot(step_dates, step_balances, 
+                                marker="o", linestyle="-", 
+                                label=account_name, 
+                                color="blue", 
+                                linewidth=0, markersize=0)
             
                 # Set x-axis ticks to match transaction dates
-                ax.set_xticks(all_dates)
-                ax.set_xticklabels([date.strftime("%d") for date in all_dates], rotation=45)  # Show only day numbers
+                all_dates_with_bounds = [starting_date] + all_dates + [ending_date]
+                ax.set_xticks(all_dates_with_bounds)
+                ax.set_xticklabels([date.strftime("%d") if date in all_dates else date.strftime("%d") for date in all_dates_with_bounds], 
+                   rotation=45)
                 
                 ax.set_ylabel("Balance ($)")
                 ax.set_title(f"{account_name} - Monthly Balance")
@@ -492,24 +554,68 @@ class FinanceTracker(tk.Tk):
                 annot = ax.annotate("", xy=(0, 0), xytext=(20, 20), textcoords="offset points",
                                     bbox=dict(boxstyle="round, pad=0.3", fc="white", ec="black"),  # Light bg, black border
                                     arrowprops=dict(arrowstyle="->", color="black"),  # Subtle arrow
-                                    fontsize=self.font_size-3, color="black", horizontalalignment='left')
+                                    fontsize=self.font_size-3, color="black", horizontalalignment='left', zorder=10)
                 annot.set_visible(False)
                 
                 def updateAnnot(x, y, trans_data):
                     """Update tooltip position and text."""
+                    
+                    def wrapText(text, n_cut=40):
+                        words = text.split()
+                        lines = []
+                        current_line = ""
+                    
+                        for word in words:
+                            if len(current_line) + len(word) + 1 > n_cut:
+                                lines.append(current_line)
+                                current_line = word
+                            else:
+                                current_line += " " + word if current_line else word
+                    
+                        lines.append(current_line)  # Append last line
+                        return "\n".join(lines)
+                    
                     annot.xy = (x, y)
                     
                     new_line = "\n"
+                    
+                    description_wrapped = wrapText(trans_data['Description'], n_cut=30)
+                    
                     try:
                         text = f"Date: {trans_data['Date'].strftime('%Y-%m-%d')}{new_line}" \
-                               f"Description: {trans_data['Description']}{new_line}" \
+                               f"Description: {description_wrapped}{new_line}" \
                                f"Category: {trans_data['Category']}{new_line}" \
                                f"Amount: ${trans_data['Amount']:,.2f}{new_line}" \
                                f"Balance: ${trans_data['Balance']:,.2f}"
                     except:
                         text = f"Date: {trans_data['Date'].strftime('%Y-%m-%d')}{new_line}" \
+                               f"Description: {description_wrapped}{new_line}" \
                                f"Balance: ${trans_data['Balance']:,.2f}"
+                               
                     annot.set_text(text)
+                    
+                    # Get plot boundaries
+                    xlim = ax.get_xlim()
+                    ylim = ax.get_ylim()
+                    
+                    x = mdates.date2num(x)
+                
+                    # Compute relative positions (0 to 1 range)
+                    x_rel = (x - xlim[0]) / (xlim[1] - xlim[0])
+                    y_rel = (y - ylim[0]) / (ylim[1] - ylim[0])
+                
+                    # Adjust annotation placement
+                    ha = "right" if x_rel > 0.66 else "left"   # Flip horizontal alignment
+                    va = "top" if y_rel > 0.66 else "bottom"  # Flip vertical alignment
+                
+                    x_offset = -10 if ha == "right" else 10   # Move left or right
+                    y_offset = -15 if va == "top" else 10     # Move up or down
+                
+                    annot.set_horizontalalignment(ha)
+                    annot.set_verticalalignment(va)
+                
+                    annot.set_bbox(dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=1.0))  # Ensure text visibility
+                    annot.xytext = (x_offset, y_offset)  # Move annotation based on alignment
 
                     annot.set_visible(True)
                 
@@ -561,50 +667,74 @@ class FinanceTracker(tk.Tk):
                     
                 # Connect hover event
                 canvas.mpl_connect("motion_notify_event", onHover)
+                
+                return                
             
             def onAccountSelect(event):
                 """Update the plot when an account is clicked in the table."""
                 selected_item = tree.focus()
                 if selected_item:
                     selected_account = tree.item(selected_item, "values")[0]  # Get selected account name
-                    account_var.set(selected_account)  # Update combobox
                     plotAccountBalance(selected_account)
             
-            def onDropdownSelect(event):
-                """Update the plot when the account is changed via dropdown."""
-                selected_account = account_var.get()
-                plotAccountBalance(selected_account)
-            
+            def reset_view(event=None):
+                """Resets the plot view to the original limits."""
+                ax.set_xlim(original_xlim)  # Restore x-axis limits
+                ax.set_ylim(original_ylim)  # Restore y-axis limits
+                canvas.draw_idle()  # Redraw the figure
+    
             # Bind events
             tree.bind("<ButtonRelease-1>", onAccountSelect)
-            account_dropdown.bind("<<ComboboxSelected>>", onDropdownSelect)
             
             # Display first account data by default
             if account_list:
                 self.selected_account = account_list[0]
-                account_var.set(self.selected_account)
                 plotAccountBalance(self.selected_account)
         
-            # Table (Treeview) - occupies full width
+            # Grid placement of widgets
             tree.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
-            
-            # Combobox - centered, does NOT stretch full width
-            account_dropdown.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
-            
-            # Plot - spans across all columns (so it aligns well)
             plot_widget.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
+            toolbar.grid(row=3, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
         
             # Configure column resizing
             top.grid_columnconfigure(0, weight=1)  # Left empty space
-            top.grid_columnconfigure(1, weight=0)  # Combobox (fixed width)
             top.grid_columnconfigure(2, weight=1)  # Right empty space
             top.grid_rowconfigure(0, weight=1)  # Table expands
             top.grid_rowconfigure(2, weight=2)  # Plot expand
+            
+            # Override the Home button's functionality
+            toolbar.home = reset_view
+            
+            def updateTableSizes(event):
+                """Dynamically adjust the table sizes for both income and expense tables."""
+                new_width = top.winfo_width()
+                
+                total_fixed_width = sum(column_widths.values())
+                scale_factor = new_width / total_fixed_width * 0.95
+                
+                try:
+                
+                    # Adjust column width dynamically based on window width
+                    if event is None or new_width != self.account_breakdown_window_width:
+                        self.account_breakdown_window_width = new_width            
+                        for col in tree["columns"]:
+                            width = int(column_widths.get(col, 140) * scale_factor)
+                            tree.column(col, width=width)
+                except:
+                    pass
+                
+                self.update_idletasks()
         
             # Resize window dynamically
             window_height = len(account_summary) * 32 + 250
             self.openRelativeWindow(top, width=window_width, height=window_height)
             top.resizable(True, True)
+            self.account_breakdown_window_width = top.winfo_width()            
+                        
+            # Bind the function to window resizing
+            top.bind("<Configure>", updateTableSizes)
+            
+            updateTableSizes(event=None)
             
             def exitWindow(event=None):
                 top.destroy()
@@ -672,8 +802,8 @@ class FinanceTracker(tk.Tk):
                 for t in (tree, account_tree):
                     t.tag_configure("oddrow", background=self.banded_row[0])
                     t.tag_configure("evenrow", background=self.banded_row[1])
-                    t.tag_configure("totalrow", font=(self.font_type, self.font_size, "bold"), background="#e6f2ff")  # Light blue for totals
-
+                    t.tag_configure("totalrow", font=(self.font_type, self.font_size, "bold"), background=self.banded_row[2])
+                    
                 return
             
             def reverseOrder(tree, months_list):
@@ -1859,7 +1989,7 @@ class FinanceTracker(tk.Tk):
             
                 popup.mainloop()
                 
-            def update_table_sizes(event):
+            def updateTableSizes(event):
                 """Dynamically adjust the table sizes for both income and expense tables."""
     
                 new_width = self.winfo_width()
@@ -1896,7 +2026,7 @@ class FinanceTracker(tk.Tk):
                 self.update_idletasks()
             
             # Bind the function to window resizing
-            self.bind("<Configure>", update_table_sizes)
+            self.bind("<Configure>", updateTableSizes)
             
             # Bind double-click event
             tree.bind("<Double-Button-1>", on_cell_double_click)
@@ -1904,7 +2034,7 @@ class FinanceTracker(tk.Tk):
             # Bind right-click event to show column menu
             tree.bind("<Button-3>", lambda event: self.showColumnMenu(event, tree, df, df_name))
             
-            update_table_sizes(event=None)
+            updateTableSizes(event=None)
             
             return
         
