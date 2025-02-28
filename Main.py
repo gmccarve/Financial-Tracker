@@ -14,6 +14,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import calendar
 from datetime import datetime, timedelta
 
+from typing import List, Tuple, Union
+
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
 pd.set_option('display.float_format','{:.2f}'.format)
@@ -31,8 +33,6 @@ class FinanceTracker(tk.Tk):
         
         self.startFresh(on_start=True)
         self.initUI()
-        
-        #self.showMonthlyBreakdown()
         
         return
 
@@ -153,6 +153,8 @@ class FinanceTracker(tk.Tk):
         self.banded_row = ["#e6f2ff", "#ffffff", '#D3D3D3']
         self.background_color = "#dce7f5"
         
+        self.backslash = '\n'
+        
         if on_start == False:
             self.clearMainFrame()
             self.selectFilesAndFolders(reload=False)
@@ -162,29 +164,41 @@ class FinanceTracker(tk.Tk):
     def onClose(self):
         """Prompt user to save before exiting."""
         #TODO UNDO
+        #TODO Doc string
         #if not self.income_data.empty or not self.expenses_data.empty:
         #    if messagebox.askyesno("Save State", "Would you like to save the financial data before exiting?"):
         #        self.saveState()
         self.destroy()
         
-    def goodLookingTables(self, style):
-        """Make any table look good from treeview"""
-        style.configure("Treeview", rowheight=25, font=(self.font_type, self.font_size))  # Set row height and font
-        style.configure("Treeview.Heading", font=(self.font_type, self.font_size+1, "bold"))  # Bold headers
-        
-        return
+    def goodLookingTables(self, style: ttk.Style) -> None:
+        """
+        Applies a consistent style to Treeview tables.
     
-    def clearTreeview(self, tree):
-        """Removes all items from a Treeview."""
+        Parameters:
+            style: The ttk.Style object used for configuring table appearance.
+        """
+        style.configure("Treeview", rowheight=25, font=(self.font_type, self.font_size))  # Set row height and font
+        style.configure("Treeview.Heading", font=(self.font_type, self.font_size + 1, "bold"))  # Bold headers
+    
+    def clearTreeview(self, tree: ttk.Treeview) -> None:
+        """
+        Clears all items from a Treeview widget.
+    
+        Parameters:
+            tree: The ttk.Treeview widget to be cleared.
+        """
         tree.delete(*tree.get_children())
     
-    def generateMonthYearList(self, start_date: datetime, end_date: datetime):
+    def generateMonthYearList(self, start_date: datetime, end_date: datetime) -> List[Tuple[int, int]]:
         """
-        Generate a list of (month, year) tuples between two datetime objects.
-        
-        :param start_date: The starting datetime object
-        :param end_date: The ending datetime object
-        :return: List of tuples in the format (month, year)
+        Generates a list of (month, year) tuples between two datetime objects.
+    
+        Parameters:
+            start_date: The starting datetime object.
+            end_date: The ending datetime object.
+            
+        Returns:
+            List of tuples in the format (month, year).
         """
         current_date = datetime(start_date.year, start_date.month, 1)
         end_date = datetime(end_date.year, end_date.month, 1)
@@ -193,37 +207,45 @@ class FinanceTracker(tk.Tk):
     
         while current_date <= end_date:
             month_year_list.append((current_date.month, current_date.year))
+            
             # Move to the next month
-            if current_date.month == 12:
-                current_date = datetime(current_date.year + 1, 1, 1)
-            else:
-                current_date = datetime(current_date.year, current_date.month + 1, 1)
-    
+            next_month = current_date.month + 1
+            next_year = current_date.year + (1 if next_month > 12 else 0)
+            current_date = datetime(next_year, 1 if next_month > 12 else next_month, 1)
+
         return month_year_list
     
-    def formatMonthYear(self, month, year):
+    def formatMonthYear(self, month: int, year: int) -> datetime:
         """
-        Convert a month and year into the format 'Mon 'YY'.
+        Convert a month and year into the format 'MM 'YY'.
         
-        :param month: The month as an integer (1-12)
-        :param year: The year as an integer
-        :return: A string in the format 'Mon 'YY'
+        Parameters:
+            month (int): The month
+            year (int): The year
+            
+        Returns:
+            A (str) in the format "Mon 'YY"
         """
         return datetime(year, month, 1).strftime("%b '%y")
     
-    def formatMonthLastDayYear(self, month, year):
+    def formatMonthLastDayYear(self, month: int, year: int) -> datetime:
         """
         Convert a month and year into the format 'Mon 'YY'.
         
-        :param month: The month as an integer (1-12)
-        :param year: The year as an integer
-        :return: A string in the format 'Mon 'YY'
+        Parameters:
+            month (int): The month
+            year (int): The year
+            
+        Returns:
+            The last day of a month given as a string in the format "MM DD 'YY"
         """
         last_day = (datetime(year, month + 1, 1) - timedelta(days=1)).day
         return datetime(year, month, last_day).strftime("%b %d, '%y")
     
     def showMonthlyBreakdown(self, event=None):
         """Show Accounts section."""
+        
+        #TODO Fix formatting and docstrings
         
         def monthlyBalances():
             
@@ -1001,6 +1023,8 @@ class FinanceTracker(tk.Tk):
     def showStatistics(self, event=None, type_of_data='inc'):
         """Displays a savings summary in a Treeview table, allowing analysis by category."""
         
+        #TODO Fix formatting and docstrings
+        
         def displayStatisticsSummary(df, categories, df_type):
             """Displays a financial account summary in two separate tables."""
             
@@ -1278,36 +1302,73 @@ class FinanceTracker(tk.Tk):
     
         return
     
-    def showSpending(self, event=None):
-       """Show Spending Breakdown section."""
+    def showSpending(self, event=None) -> None:
+       """
+        Displays the Spending Breakdown section.
+
+        This method calls `showStatistics` with `type_of_data='exp'` 
+        to present an analysis of expenses.
+        
+        Parameters:
+        event (tkinter event, optional): Event trigger (default is None).
+        """
        self.showStatistics(type_of_data='exp')
        
-    def showSavings(self, event=None):
-       """Show Spending Breakdown section."""
+    def showSavings(self, event=None) -> None:
+       """
+        Displays the Savings Breakdown section.
+
+        This method calls `showStatistics` with `type_of_data='inc'` 
+        to present an analysis of income.
+        
+        Parameters:
+        event (tkinter event, optional): Event trigger (default is None).
+        """
        self.showStatistics(type_of_data='inc')
     
-    def showInvestments(self, event=None):
+    def showInvestments(self, event=None) -> None:
         """Show Investments section."""
+        #TODO
         self.current_window = 'Investments'
         self.clearMainFrame()
         label = ttk.Label(self.main_frame, text="Investments", font=("Arial", 14, "bold"))
         label.pack(pady=20)
         
-    def showMainFrame(self, event=None, start_fresh=True):
-        """Show the mainframe of the program"""
+    def showMainFrame(self, event=None, start_fresh=True) -> None:
+        """
+        Displays the mainframe with income and expense tables.
+
+        It loads fresh copies of the stored income and expenses data.
+
+        Parameters:
+        event (tkinter event, optional): Event trigger (default is None).
+        start_fresh (bool, optional): Flag indicating whether to refresh data (default is True).
+        """
         self.displayIncExpTables(self.income_data.copy(), self.expenses_data.copy())
-        return
     
-    def clearMainFrame(self):
-        """Clear the main frame for a new view."""
+    def clearMainFrame(self) -> None:
+        """
+        Clears all widgets from the main frame.
+
+        This method removes all child widgets from `self.main_frame`
+        to prepare it for a new view.
+        """
         for widget in self.main_frame.winfo_children():
             widget.destroy()
-        return
+        
+    def editInitialValues(self) -> None:
+        """
+        Opens a secondary window to edit initial account balances.
     
-    def editInitialValues(self):
-        """Open a secondary window to edit initial values for accounts."""
+        This function:
+        - Loads initial account balances into an editable table.
+        - Allows users to modify values and save changes.
+        - Updates `self.starting_data` upon saving.
+        - Handles incorrect user inputs gracefully.
+        - Closes the window upon pressing 'Escape' or clicking 'Save'.
+        """
     
-        # Ensure data is loaded
+        # Ensure data is loaded before opening the editor
         if self.starting_data is None or self.starting_data.empty:
             messagebox.showwarning("Warning", "No data loaded! Load files first.")
             return
@@ -1332,10 +1393,9 @@ class FinanceTracker(tk.Tk):
     
         # Scrollable frame inside the canvas
         scroll_frame = ttk.Frame(canvas)
-        scroll_frame.bind(
-            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
+        scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
     
+        # Embed scrollable frame inside canvas
         canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
     
@@ -1347,7 +1407,7 @@ class FinanceTracker(tk.Tk):
         
         # Insert data from dataframe
         for i, account in enumerate(self.accounts):
-            initial_balance = self.starting_data[account].values[0]
+            initial_balance = self.starting_data[account].values[0] / 100  # Convert cents to dollars
             
             # Account Name Label
             ttk.Label(scroll_frame, text=account, font=(self.font_type, self.font_size)).grid(
@@ -1356,44 +1416,58 @@ class FinanceTracker(tk.Tk):
     
             # Entry Field for Balance
             entry = ttk.Entry(scroll_frame, width=15, font=(self.font_type, self.font_size - 2))
-            entry.insert(0, f"{initial_balance/100:.2f}")
+            entry.insert(0, f"{initial_balance:.2f}")
             entry.grid(row=i + 1, column=1, padx=10, pady=5, sticky="w")
     
             entry_widgets[account] = entry
     
         # Function to save changes
         def saveChanges(event=None):
-            """Save edited initial values to the dataframe."""
+            """
+            Saves updated initial values to `self.starting_data` and closes the window.
+    
+            - Converts entered values from dollars to cents (integer storage).
+            - Ensures all values are valid numbers.
+            - Displays an error message if invalid input is found.
+            - Refreshes the Monthly Breakdown if currently displayed.
+            """
             for account, entry in entry_widgets.items():
-                new_value = entry.get()
+                new_value = entry.get().strip()
     
                 try:
-                    new_value = int(round(float(new_value),2) * 100)
+                    # Convert dollars to cents (ensuring integer storage)
+                    new_value = int(round(float(new_value), 2) * 100)
                     self.starting_data[account] = new_value
-                except Exception:
-                    messagebox.showerror("Error", f"Invalid value for {account}. Please enter a number.")
+                except ValueError:
+                    messagebox.showerror("Error", f"Invalid value for {account}. Please enter a valid number.")
+                    return  # Prevents saving if there's an invalid entry
     
             messagebox.showinfo("Success", "Initial balances updated successfully.")
             top.destroy()
-            
+    
+            # Refresh Monthly Breakdown if currently displayed
             if self.current_window == 'Monthly Breakdown':
                 self.showMonthlyBreakdown()
-            
+    
+        # Function to close the window
         def exitWindow(event=None):
+            """Closes the edit window without saving changes."""
             top.destroy()
-            
+
+        # Set window size dynamically based on number of accounts
         window_width = 320
-        window_height = (len(self.accounts)+1) * 45
-        geom = str(window_width) + "x" + str(window_height)
-        top.geometry(geom)
+        window_height = (len(self.accounts) + 1) * 45  # Dynamic height
+        top.geometry(f"{window_width}x{window_height}")
         
+        # Bind hotkeys
         top.bind("<Escape>", exitWindow)
         top.bind("<Return>", saveChanges)
         
-        # Save Button (Now at Bottom)
+        # Bottom Frame for Buttons
         button_frame = ttk.Frame(top)
         button_frame.pack(side="bottom", pady=10)
     
+        # Save Button
         save_button = ttk.Button(button_frame, text="Save Changes", command=saveChanges, style="Accent.TButton")
         save_button.pack()
     
@@ -1406,139 +1480,222 @@ class FinanceTracker(tk.Tk):
         
         return
     
-    def updateData(self):
-        """update the data based on csv files"""
+    def updateData(self) -> None:
+        """
+        Updates the financial data based on CSV files.
+    
+        This method triggers `selectFilesAndFolders` with `update=True`,
+        ensuring that the data is refreshed with the latest available files.
+        """
         self.selectFilesAndFolders(update=True)
-        return
 
     def selectFilesAndFolders(self, event=None, reload=False, update=False):
         """Open file dialog to select csv or pkl file(s)"""
         
+        #TODO Doc strings
+        
         def loadCSVFile(file):
-            """Load financial data from csv file(s)."""
+            """
+            Load financial data from a CSV file and categorize transactions 
+            into income and expenses based on account type.
             
-            headers = ['Date', 'Description', 'Amount', 'Account', 'Category']
-                
+            Parameters:
+                file (str): Path to the CSV file.
+        
+            Returns:
+                tuple: (income_df, expense_df) - DataFrames for income and expenses.
+            """
             file_name = file.split("/")[-1]
         
-            try:
+            def readAFCU(file, file_name):
+                """Reads and processes AFCU CSV file."""
                 df = pd.read_csv(file).fillna(0)
-                rows_to_drop = (df == 0).all(axis=1)
-                df = df[~rows_to_drop]
-                
-                expenses = {header: [] for header in headers}
-                income = {header: [] for header in headers}
-                
-                for i in range(df.shape[0]):
-                
-                    #Differentiate between the different sources of information
-                    if file_name.startswith("AFCU"):
-                
-                        date        = df['Date'][i]
-                        description = df['Description'][i]
-                        credit      = df['Credit'][i]
-                        debit       = df['Debit'][i]
-                        
-                    elif file_name.startswith("Capital"):
-                        
-                        date        = df['Transaction Date'][i]
-                        description = df['Description'][i]
-                        credit      = df['Credit'][i]
-                        debit       = df['Debit'][i]
-                    
-                    elif file_name.startswith("PFCU"):
-                        
-                        if 'credit' in file_name.lower():
-                            date      = df['Posted Date'][i]
-                        else:
-                            date    = df['Transaction Date'][i]
-
-                        description = df['Description'][i]
-                        amount      = df['Amount'][i]
-                        
-                        for j in ["$", ",", ")"]:
-                            amount = amount.replace(j,"")
-                        amount = float(str(amount).replace("(","-"))
-                        
-                        if amount > 0.0:
-                            credit = amount
-                            debit = 0.0
-                        elif amount < 0.0:
-                            credit = 0.0
-                            debit = amount
-                        else:
-                            pass
-                            
-                        if file_name.endswith("Credit.csv"):
-                            old_credit = credit
-                            old_debit = debit
-                            
-                            debit = old_credit
-                            credit = old_debit
-                        
-                    if debit == 0.0:
-                        income['Date'].append(date)
-                        income['Description'].append(description)
-                        income['Amount'].append(abs(float(credit)))
-                        income['Account'].append(file_name.replace(".csv",""))
-                        income['Category'].append('')
-                            
-                    else:
-                        expenses['Date'].append(date)
-                        expenses['Description'].append(description)
-                        expenses['Amount'].append(abs(float(debit)))
-                        expenses['Account'].append(file_name.replace(".csv",""))
-                        expenses['Category'].append('')
-                    
-                expenses = pd.DataFrame(expenses)
-                income   = pd.DataFrame(income)
-                
-                # Change all amounts to cents for float handling
-                expenses['Amount']  = (expenses["Amount"] * 100).round().astype(int)
-                income['Amount']    = (income["Amount"] * 100).round().astype(int)
         
-                return income, expenses
+                # Drop rows where all values are zero
+                df = df.loc[~(df == 0).all(axis=1)]
+        
+                # Drop 'No.' column if it exists
+                df = df.drop(columns=['No.'], errors='ignore')
+        
+                # Separate into income and expense
+                inc_df = df[df['Debit'] == 0.00].drop(columns=['Debit']).rename(columns={'Credit': 'Amount'})
+                exp_df = df[df['Credit'] == 0.00].drop(columns=['Credit']).rename(columns={'Debit': 'Amount'})
+        
+                # Apply common transformations
+                for new_df in [inc_df, exp_df]:
+                    new_df['Account'] = file_name.replace(".csv", "")
+                    new_df['Category'] = ""
+                    new_df['Amount'] = abs(new_df['Amount'])
+        
+                return inc_df, exp_df
+        
+            def readPFCU(file, file_name):
+                """Reads and processes PFCU CSV file."""
+                df = pd.read_csv(file).fillna(0)
+        
+                # Drop rows where all values are zero
+                df = df.loc[~(df == 0).all(axis=1)]
+        
+                # Select correct date column
+                if 'credit' in file_name.lower():
+                    df = df.rename(columns={'Posted Date': 'Date'}).drop(columns=['Transaction Date'], errors='ignore')
+                else:
+                    df = df.rename(columns={'Transaction Date': 'Date'}).drop(columns=['Posted Date'], errors='ignore')
+        
+                # Drop 'Balance' column
+                df = df.drop(columns=['Balance'], errors='ignore')
+        
+                # Convert money format to float
+                df['Amount'] = df['Amount'].replace({'\$': '', ',': '', '\(': '-', '\)': ''}, regex=True).astype(float)
+        
+                # Reverse sign for credits (since they're recorded as negative)
+                if 'credit' in file_name.lower():
+                    df['Amount'] *= -1
                     
-            except Exception as e:
-                messagebox.showinfo(message = f"CSV file {file} not read. \n\n Error {e}")
-                return '', ''
-               
+                df['Account'] = file_name.replace(".csv", "")
+                df['Category'] = ""
+        
+                # Split into income (positive) and expenses (negative)
+                inc_df = df[df['Amount'] > 0].copy() 
+                exp_df = df[df['Amount'] < 0].copy()
+                
+                # Split into income (positive) and expenses (negative)
+                inc_df['Amount'] = inc_df['Amount'].abs() 
+                exp_df['Amount'] = exp_df['Amount'].abs()
+        
+                return inc_df, exp_df
+        
+            def readCapitalOne(file, file_name):
+                """Reads and processes Capital One CSV file."""
+                df = pd.read_csv(file).fillna(0)
+        
+                # Drop rows where all values are zero
+                df = df.loc[~(df == 0).all(axis=1)]
+        
+                # Drop irrelevant columns
+                df = df.drop(columns=['Card No.', 'Posted Date'], errors='ignore')
+        
+                # Standardize date column
+                df = df.rename(columns={'Transaction Date': 'Date'})
+        
+                # Separate into income and expense
+                inc_df = df[df['Debit'] == 0.00].drop(columns=['Debit']).rename(columns={'Credit': 'Amount'})
+                exp_df = df[df['Credit'] == 0.00].drop(columns=['Credit']).rename(columns={'Debit': 'Amount'})
+        
+                # Apply common transformations
+                for new_df in [inc_df, exp_df]:
+                    new_df['Account'] = file_name.replace(".csv", "")
+                    new_df['Category'] = ""
+                    new_df['Amount'] = abs(new_df['Amount'])
+        
+                    # Ensure 'Category' column is in the 4th position
+                    category_col = new_df.pop('Category')
+                    new_df.insert(4, 'Category', category_col)
+        
+                return inc_df, exp_df
+        
+            # Determine which function to use based on the file name
+            if file_name.startswith("AFCU"):
+                income, expenses = readAFCU(file, file_name)
+            elif file_name.startswith("Capital One"):
+                income, expenses = readCapitalOne(file, file_name)
+            elif file_name.startswith("PFCU"):
+                income, expenses = readPFCU(file, file_name)
+            else:
+                raise ValueError(f"Unsupported file type: {file_name}")
+        
+            # Convert amounts to cents (integers)
+            income["Amount"] = (income["Amount"] * 100).round().astype(int)
+            expenses["Amount"] = (expenses["Amount"] * 100).round().astype(int)
+        
+            return income, expenses                   
+        
         def loadPickleFile(file):
-            """Load financial data from a pickle file."""
+            """
+            Load financial data from a pickle (.pkl) file.
+        
+            Parameters:
+                file (str): Path to the pickle file.
+        
+            Returns:
+                tuple:
+                    pd.DataFrame: Income transactions.
+                    pd.DataFrame: Expense transactions.
+                    pd.DataFrame: Initial balance data.
+            """
             with open(file, "rb") as f:
                 yearly_data = pickle.load(f)
+
             return yearly_data['Income'], yearly_data['Expenses'], yearly_data['Initial']
         
         def loadXLSXFile(file):
-            """Load financial data from an excel XLSX file."""
-            inc      = pd.read_excel(file, sheet_name='Income')
-            exp      = pd.read_excel(file, sheet_name='Expenses')
-            start    = pd.read_excel(file, sheet_name='Starting Balance')
-            
-            inc     = inc.drop(columns=["Unnamed: 0"])
-            exp     = exp.drop(columns=["Unnamed: 0"])
-            start   = start.drop(columns=["Unnamed: 0"])
-            
-            return inc, exp, start            
+            """
+            Load financial data from an Excel (.xlsx) file.
+        
+            This function:
+                Reads 'Income', 'Expenses', and 'Starting Balance' sheets, removing unnecessary columns.
+        
+            Parameters:
+                file (str): Path to the Excel file.
+        
+            Returns:
+                tuple:
+                    pd.DataFrame: Income transactions.
+                    pd.DataFrame: Expense transactions.
+                    pd.DataFrame: Initial balance data.
+            """
+            sheets = ['Income', 'Expenses', 'Starting Balance']
+            data = {sheet: pd.read_excel(file, sheet_name=sheet).drop(columns=["Unnamed: 0"], errors='ignore') for sheet in sheets}
+        
+            return data['Income'], data['Expenses'], data['Starting Balance']
         
         def compareOldAndNewDF(df1, df2):
-            """find values not in common to df1 and df2"""
-            
-            df1 = df1.drop(columns=['Category'])
+            """
+            Compare two DataFrames and return rows in df1 that are not present in df2.
+        
+            This function:
+                - Removes the 'Category' column from df1 if present.
+                - Converts the 'Date' column to a consistent date format.
+                - Drops 'Category' and 'Index' columns from df2 if present.
+                - Identifies rows unique to df1.
+        
+            Parameters:
+                df1 (pd.DataFrame): First DataFrame (typically the new dataset).
+                df2 (pd.DataFrame): Second DataFrame (typically the older dataset for comparison).
+        
+            Returns:
+                pd.DataFrame: Rows from df1 that are not present in df2.
+            """
+            # Drop 'Category' from df1 if present
+            df1 = df1.drop(columns=['Category'], errors='ignore')
+        
+            # Convert 'Date' column to datetime and retain only the date part
             df1['Date'] = pd.to_datetime(df1['Date'], dayfirst=False, format='mixed').dt.date
-            
-            for l in ['Category', 'Index']:
-                if l in df2.columns:  
-                    df2 = df2.drop(columns=[l])
-            
+        
+            # Drop 'Category' and 'Index' from df2 if they exist
+            df2 = df2.drop(columns=[col for col in ['Category', 'Index'] if col in df2.columns], errors='ignore')
+        
+            # Identify rows in df1 that are not present in df2
             return df1.loc[~df1.apply(tuple, axis=1).isin(df2.apply(tuple, axis=1))]
         
         def addNewValuesToDF(df1, df2):
-            """Combine df1 and df2 and keep category information"""
-            df = pd.concat([df1, df2], ignore_index=True)
-            if 'Index' in df.columns:
-                df = df.drop(columns=['Index'])
-            return df                
+            """
+            Combine two DataFrames while preserving category information.
+        
+            This function:
+                - Concatenates df1 and df2.
+                - Drops the 'Index' column if present.
+        
+            Parameters:
+                df1 (pd.DataFrame): First DataFrame.
+                df2 (pd.DataFrame): Second DataFrame.
+        
+            Returns:
+                pd.DataFrame: Merged DataFrame with all unique rows.
+            """
+            merged_df = pd.concat([df1, df2], ignore_index=True).drop(columns=['Index'], errors='ignore')
+            
+            return merged_df               
         
         # Reading in an updated csv file to add only new info and not lose old category information
         if update and not self.income_data.empty and not self.expenses_data.empty:
@@ -1608,6 +1765,8 @@ class FinanceTracker(tk.Tk):
     
     def setupDataFrames(self):
         """Format the expenses and income dataframes and also setup initial variables/lists"""
+        
+        #TODO Docstrings
         
         def getDataFrameIndex(df):
             """Add/correct index column of dataframe"""
@@ -1729,127 +1888,196 @@ class FinanceTracker(tk.Tk):
         
         return    
     
-    def reloadData(self):
+    def reloadData(self) -> None:
+        """
+        Reloads financial data by triggering the file selection function.
+    
+        This function clears the current window and reloads data files.
+    
+        Retuns:
+            None
+        """
         self.current_window = ''
         self.selectFilesAndFolders(reload=True)
     
-    def saveState(self):
-        """Save function.""" 
-        
-        with open(self.last_saved_file, 'r') as ff:
-            f = ff.readlines() 
-            
-        if len(f) == 1:
-            file_name = f[0]
-            if file_name.endswith(".pkl"):
-                self.saveToPickleFile(file_name)
-            elif file_name.endswith(".xlsx"):
-                self.saveToXLSX(file_name)
-        elif len(f) == 5:
-            self.saveToCSV(f)
-        else:
-            messagebox.showinfo("Message", "No data to save")  
-            
-        return
-        
-    def saveStateAs(self):
-        """Save as function."""
-        
-        filetypes = [("Excel Files", "*.xlsx"),
-                     ("Pickle Files", "*.pkl"),
-                     ("CSV Files", "*.csv")]
-        
-        file_name = filedialog.asksaveasfilename(title="Select Files", filetypes=filetypes, defaultextension=".xlsx")
-        
-        self.sendToSaveFile(file_name)
-        
-        return
+    def saveState(self) -> None:
+        """
+        Saves financial data based on the last saved file format.
     
-    def sendToSaveFile(self, file_name):
-        """Save as respective filetype"""
+        - If the last saved file is a `.pkl`, saves as a Pickle file.
+        - If the last saved file is a `.xlsx`, saves as an Excel file.
+        - If the last saved file is in CSV format (5 lines), saves as CSV.
+        - If no valid file is found, prompts the user.
+        
+        Retuns:
+            None
+        """ 
+        
+        try:
+            with open(self.last_saved_file, 'r') as ff:
+                file_lines = ff.readlines()
+    
+            if len(file_lines) == 1:
+                file_name = file_lines[0].strip()
+                if file_name.endswith(".pkl"):
+                    self.saveToPickleFile(file_name)
+                elif file_name.endswith(".xlsx"):
+                    self.saveToXLSX(file_name)
+            elif len(file_lines) == 5:
+                self.saveToCSV(file_lines)
+            else:
+                messagebox.showinfo("Message", "No data to save")
+        except FileNotFoundError:
+            messagebox.showinfo("Message", "No previously saved file found.")
+        
+    def saveStateAs(self) -> None:
+        """
+        Saves financial data with user-specified file format.
+    
+        Prompts the user to select a save location and file format (`.xlsx`, `.pkl`, `.csv`).
+        
+        Retuns:
+            None
+        """
+        filetypes = [
+            ("Excel Files", "*.xlsx"),
+            ("Pickle Files", "*.pkl"),
+            ("CSV Files", "*.csv"),
+        ]
+        
+        file_name = filedialog.asksaveasfilename(
+            title="Select Files",
+            filetypes=filetypes,
+            defaultextension=".xlsx"
+        )
+    
+        if file_name:
+            self.sendToSaveFile(file_name)
+    
+    def sendToSaveFile(self, file_name: str) -> None:
+        """
+        Saves data to a file, choosing the correct format.
+    
+        Parameters:
+            file_name: The file path where data should be saved.
+        
+        Retuns:
+            None
+        """
         if file_name.endswith(".pkl"):
             self.saveToPickleFile(file_name)
         elif file_name.endswith(".xlsx"):
             self.saveToXLSX(file_name)
         elif file_name.endswith(".csv"):
             self.saveToCSV(file_name)
-        return
     
-    def saveToXLSX(self, file_name):
-        """Save income, expenses, and starting balance information to xlsx file"""
+    def saveToXLSX(self, file_name: str) -> None:
+        """
+        Saves financial data to an Excel (.xlsx) file.
+    
+        Parameters:
+            file_name: The file path for saving.
         
-        list_dfs = [self.income_data, self.expenses_data, self.starting_data]
-        names = ['Income', 'Expenses', 'Starting Balance']
-        
+        Retuns:
+            None
+        """
+        data_frames = [self.income_data, self.expenses_data, self.starting_data]
+        sheet_names = ['Income', 'Expenses', 'Starting Balance']
+    
         try:
             with pd.ExcelWriter(file_name) as writer:
-                for idx, df in enumerate(list_dfs, start=1):
-                    df.to_excel(writer, sheet_name=names[idx-1])
+                for df, sheet_name in zip(data_frames, sheet_names):
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+    
+            messagebox.showinfo("File Saved", f"Data successfully saved to \n{file_name}")
+            self.updateLastSavedFile(file_name)
+    
+        except Exception as e:
+            messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}\n\n{str(e)}")
+    
+    def saveToCSV(self, file_name: Union[str, List[str]]) -> None:
+        """
+        Saves financial data to CSV files.
+    
+        If the provided file name is a list (legacy behavior), extracts the directory and base name from the first item.
+    
+        Parameters:
+            file_name: The file path or list of file paths.
+        
+        Returns:
+            None
+        """
+        
+        try:
+            if type(file_name) == str:
+                dir_base = "/".join(file_name.split("/")[:-1])
+                file_base = file_name.split("/")[-1].split(".")[0]
+            else:
+                dir_base = "/".join(file_name[0].split("/")[:-1])
+                file_base = file_name[0].split("/")[-1].split("_")[0]
+            
+            list_dfs = [self.income_data, self.expenses_data, self.starting_data]
+            type_names = ['Income', 'Expenses', 'Starting Balance']
+            file_names = []
+            
+            try:
+                for idx, df in enumerate(list_dfs):
+                    file_path = os.path.join(dir_base, file_base + "_" + type_names[idx] + ".csv")
+                    df.to_csv(file_path, index=False)
+                    file_names.append(file_path)
                     
-            messagebox.showinfo("File Saved", f"Data successfully saved to \n{file_name}")
-            
-            self.updateLastSavedFile(file_name)
-            
-        except:
-            messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}")
+                all_file_names = "\n\n".join(file_names)
+                messagebox.showinfo("Files Saved", f"Data successfully saved to \n\n{all_file_names}")
                 
-        return
+                self.updateLastSavedFile(all_file_names)
+                
+            except:
+                messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}")     
     
-    def saveToCSV(self, file_name):
-        """Save income, expenses, and starting balance information to csv files"""
+        except Exception as e:
+            messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}\n\n{str(e)}")
         
-        if type(file_name) == str:
-            dir_base = "/".join(file_name.split("/")[:-1])
-            file_base = file_name.split("/")[-1].split(".")[0]
-        else:
-            dir_base = "/".join(file_name[0].split("/")[:-1])
-            file_base = file_name[0].split("/")[-1].split("_")[0]
+    def saveToPickleFile(self, file_name: str) -> None:
+        """
+        Saves financial data to a Pickle (.pkl) file.
+    
+        Parameters:
+            file_name: The file path for saving.
         
-        list_dfs = [self.income_data, self.expenses_data, self.starting_data]
-        type_names = ['Income', 'Expenses', 'Starting Balance']
-        file_names = []
-        
+        Returns:
+            None
+        """
+        yearly_data = {
+            'Income': self.income_data,
+            'Expenses': self.expenses_data,
+            'Initial': self.starting_data,
+        }
+    
         try:
-            for idx, df in enumerate(list_dfs):
-                file_path = os.path.join(dir_base, file_base + "_" + type_names[idx] + ".csv")
-                df.to_csv(file_path, index=False)
-                file_names.append(file_path)
-                
-            all_file_names = "\n\n".join(file_names)
-            messagebox.showinfo("Files Saved", f"Data successfully saved to \n\n{all_file_names}")
-            
-            self.updateLastSavedFile(all_file_names)
-            
-        except:
-            messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}")                
-        
-        return
-        
-    def saveToPickleFile(self, file_name):
-        """Save income and expenses information to pickle file"""
-        yearly_data = {'Expenses'   : self.expenses_data, 
-                       'Income'     : self.income_data, 
-                       'Initial'    : self.starting_data}
-        
-        try:
-            file_name = os.path.join(file_name)
             with open(file_name, "wb") as f:
-                pickle.dump(yearly_data, f)    
-                
-            messagebox.showinfo("File Saved", f"Data successfully saved to \n{file_name}")
-            
-            self.updateLastSavedFile(file_name)
-            
-        except:
-            messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}")
-        
-        return
+                pickle.dump(yearly_data, f)
     
+            messagebox.showinfo("File Saved", f"Data successfully saved to \n{file_name}")
+            self.updateLastSavedFile(file_name)
+    
+        except Exception as e:
+            messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}\n\n{str(e)}")
+
     def updateLastSavedFile(self, file_name):
-        """Update the last saved file following a successful save"""
-        with open(self.last_saved_file, "w") as f:
-            f.write(file_name)
-        return        
+        """
+        Updates the record of the last saved file.
+    
+        Parameters:
+            file_name: The file path that was last successfully saved.
+        
+        Results:
+            None
+        """
+        try:
+            with open(self.last_saved_file, "w") as f:
+                f.write(file_name)
+        except Exception as e:
+            messagebox.showinfo("Error", f"Could not update last saved file: \n\n{str(e)}")        
 
     def displayIncExpTables(self, inc, exp):
         """Display total expenses and income data.""" 
@@ -2086,35 +2314,47 @@ class FinanceTracker(tk.Tk):
         
         return 
 
-    def getCategoryTypes(self, name=None):
-        """get category types from files"""
-        if name == 'inc':
-            file_name = "IncomeCategories.txt"
-        else:
-            file_name = "SpendingCategories.txt"
-            
-        cat_list = []
-        
+    def getCategoryTypes(self, name: str) -> Tuple[List[str], str]:
+        """
+        Retrieves category types from the appropriate file.
+    
+        Parameters:
+            name (str): If 'inc', loads income categories; otherwise, loads spending categories.
+    
+        Returns:
+            Tuple[List[str], str]: A sorted list of category names and the full path to the category file.
+        """
+        file_name = "IncomeCategories.txt" if name == 'inc' else "SpendingCategories.txt"
         cat_file = os.path.join(os.path.dirname(__file__), file_name)
         
         with open(cat_file) as ff:
-            categories = ff.readlines()
-        for cat in categories:
-            if cat.endswith("\n"):
-                cat_list.append(cat[:-1])
-            else:
-                cat_list.append(cat)
-                
-        return sorted(cat_list), cat_file     
+            categories = [cat.strip() for cat in ff.readlines()]  # Strip newline characters
+
+        return sorted(categories), cat_file     
    
-    def redisplayDataFrameTable(self):
-        """Evaluate the Dataframes after changing the viewing windows, min/max, etc."""
+    def redisplayDataFrameTable(self) -> None:
+        """
+        Reevaluates and redisplays the DataFrames after changes to the viewing filters.
+    
+        This function:
+            - Clears the main frame before updating the view.
+            - Applies date range and amount range filters.
+            - Filters data based on selected accounts and category values.
+            - Resets index and redisplays the filtered tables.
+    
+        Parameters:
+            None
+    
+        Returns:
+            None
+        """
         
         self.clearMainFrame()
         
         inc_data_copy = self.income_data.copy()
         exp_data_copy = self.expenses_data.copy()
         
+        # Apply filtering based on defined ranges
         for r, ranges in enumerate([False, self.new_date_range, False, self.new_amount_range]):
             if ranges:
                 col = inc_data_copy.columns[r] 
@@ -2123,43 +2363,58 @@ class FinanceTracker(tk.Tk):
                     inc_data_copy = inc_data_copy[inc_data_copy[col].between(ranges[0], ranges[1])]
                     exp_data_copy = exp_data_copy[exp_data_copy[col].between(ranges[0], ranges[1])]
                 else:
+                    # Amount is stored in cents, so adjust the range
                     inc_data_copy = inc_data_copy[inc_data_copy[col].between(ranges[0][0]*100, ranges[0][1]*100)]
                     exp_data_copy = exp_data_copy[exp_data_copy[col].between(ranges[1][0]*100, ranges[1][1]*100)]
                 
+        # Apply filtering for selected accounts and categories
         for v, values in enumerate([self.new_accounts, [self.new_inc_categories, self.new_exp_categories]]):
             if values:
                 col = inc_data_copy.columns[r+v+1]
                 if v == 0:
+                    # Filter by accounts
                     inc_data_copy = inc_data_copy[inc_data_copy[col].isin(values)]
                     exp_data_copy = exp_data_copy[exp_data_copy[col].isin(values)]
                 else:
+                    # Filter by categories (income and expense separately)
                    inc_data_copy = inc_data_copy[inc_data_copy[col].isin(values[0])]
                    exp_data_copy = exp_data_copy[exp_data_copy[col].isin(values[1])]
-                
+           
+        # Reset index after filtering
         inc_data_copy = inc_data_copy.reset_index(drop=True) 
         exp_data_copy = exp_data_copy.reset_index(drop=True) 
         
+        # Display the filtered data
         self.displayIncExpTables(inc_data_copy, exp_data_copy)
-        
-        return
     
-    def openRelativeWindow(self, new_window, width, height):
-        """Ensure that the new window is open relative to the main window"""
-        
+    def openRelativeWindow(self, new_window, width: int, height: int) -> None:
+        """
+        Positions the new window relative to the main application window.
+    
+        This ensures that the new window appears slightly offset from the main window.
+    
+        Parameters:
+            new_window: The new Tkinter window to be positioned.
+            width (int): The width of the new window.
+            height (int): The height of the new window.
+    
+        Returns:
+            None
+        """
         # Get the main window's position
         main_x = self.winfo_x()
         main_y = self.winfo_y()
-        
-        # Set the position relative to the main window (e.g., 50 pixels to the right and down)
+    
+        # Position new window slightly offset from the main window
         new_x = main_x + 50
         new_y = main_y + 50
     
         new_window.geometry(f"{width}x{height}+{new_x}+{new_y}")  # Format: "WIDTHxHEIGHT+X+Y"
-        
-        return
     
     def showColumnMenu(self, event, table, df, df_name):
         """Show a menu when right-clicking a table heading."""
+        
+        #TODO DocStrings
         
         def showLastMonth(delta=0):
             """Only show data for the last 30/60/90/180/365 days"""
@@ -2649,17 +2904,39 @@ class FinanceTracker(tk.Tk):
             
         menu.post(event.x_root, event.y_root)
 
-    def sortIncExpTable(self, table, column_name, df, sort_direction):
-        """Sort the table by a selected column, reversing order on each click."""
+    def sortIncExpTable(self,  table: tk.Widget, column_name: str, df: pd.DataFrame, sort_direction: Union[int, bool]) -> None:
+        """
+        Sorts the income/expense table by a selected column, reversing order on each click.
+    
+        - If the column was previously sorted, clicking again reverses the order.
+        - If sorting for the first time, it determines the initial order based on current data.
+        - Applies sorting based on primary column and fallback order on 'Date', 'Amount', 'Account', 'Category'.
+        - Updates the table display after sorting.
+        - Applies alternating row colors for readability.
+    
+        Parameters:
+            table (tk.Widget): The Treeview table to update after sorting.
+            column_name (str): The column to sort by.
+            df (pd.DataFrame): The DataFrame containing the table data.
+            sort_direction (Union[int, bool]): Sorting order (0 for auto-detect, True for ascending, False for descending).
+    
+        Returns:
+        None
+        """
         
-        if self.current_sort == column_name and sort_direction:
+        # Prevent redundant sorting
+        if self.current_sort == column_name and sort_direction != self.sort_orders.get(column_name, True):
             return
         
-        if sort_direction == 0:
-            if df[column_name].values.tolist() == sorted(df[column_name].values.tolist()):           
-                sort_direction = False
-            else:
+        # Determine initial sorting direction if unspecified (0)
+        #TODO FIX SORT
+        if type(sort_direction) == int:
+            last_sort = self.sort_orders.get(column_name, None)
+            
+            if last_sort is None:
                 sort_direction = True
+            else:
+                sort_direction = not self.sort_orders[column_name]
         
         df.sort_values(by=[column_name, 'Date', 'Amount', 'Account', 'Category'], ascending=sort_direction, inplace=True)
         self.sort_orders[column_name] = not sort_direction  # Toggle order for next sort
