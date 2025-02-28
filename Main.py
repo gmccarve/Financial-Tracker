@@ -810,15 +810,17 @@ class FinanceTracker(tk.Tk):
                     
                 return
             
-            def reverseOrder(tree, months_list):
+            def reverseOrder(event=None, tree='', months_list=[]):
                 """Reverses the column order and updates the balance_tree while preserving formatting."""
                 
-                # Toggle the switch_monthly_order variable
-                self.switch_monthly_order = not self.switch_monthly_order
-                months_list.reverse()  # Reverse the column order
+                # Get the clicked column
+                region = tree.identify("region", event.x, event.y)
                 
-                # Call populateBalanceTree to apply changes
-                populateBalanceTree(tree, account_summary, months_list)
+                # Activate only if the click is on the column header
+                if region == "heading":
+                    self.switch_monthly_order = not self.switch_monthly_order
+                    months_list.reverse()
+                    populateBalanceTree(tree, account_summary, months_list)
                 
             def onMouseWheel(event, tree, account_tree):
                 """ Mouse wheel scrolling - improves speed"""
@@ -924,7 +926,7 @@ class FinanceTracker(tk.Tk):
             account_tree.column("Account", width=160, anchor=tk.W, stretch=tk.NO)
             account_tree.pack(side=tk.LEFT, fill=tk.Y)
             
-            account_tree.bind("<Button-1>", lambda event: reverseOrder(balance_tree, months))
+            account_tree.bind("<Button-1>", lambda event: reverseOrder(event, balance_tree, months))
             account_tree.bind("<Button-3>", lambda event: showColumnMenu(event, balance_tree, account_tree, months))
         
             # Create a frame for the main Treeview and scrollbar
