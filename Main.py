@@ -109,7 +109,7 @@ class FinanceTracker(tk.Tk):
         self.selectFilesAndFolders(reload=True)
         self.showMainFrame(start_fresh=False)
         
-        self.showSpending()
+        #self.showSpending()
         #self.destroy()
         
         return
@@ -142,7 +142,7 @@ class FinanceTracker(tk.Tk):
         self.hide_index = True
         
         self.current_window = ''
-        self.current_sort = ''
+        self.current_sort = 'Index'
         
         # For formatting consistency
         
@@ -2316,7 +2316,7 @@ class FinanceTracker(tk.Tk):
         
             # Define column headings
             for col in columns:
-                tree.heading(col, text=col, command=lambda c=col: self.sortIncExpTable(tree, c, df, 0))
+                tree.heading(col, text=col, command=lambda c=col: self.sortIncExpTable(tree, c, df, -1))
                 width = column_widths.get(col, 120)
                 tree.column(col, anchor=tk.W if col != "Amount" else tk.E, width=width, stretch=tk.NO)
         
@@ -3102,22 +3102,21 @@ class FinanceTracker(tk.Tk):
         None
         """
         
-        # Prevent redundant sorting
-        if self.current_sort == column_name and sort_direction != self.sort_orders.get(column_name, True):
-            return
-        
-        # Determine initial sorting direction if unspecified (0)
-        #TODO FIX SORT
-        if type(sort_direction) == int:
-            last_sort = self.sort_orders.get(column_name, None)
-            
-            if last_sort is None:
-                sort_direction = True
+        # Determine initial sorting direction if unspecified (-1)
+        if sort_direction == -1:
+            if column_name in self.sort_orders:
+                self.sort_orders[column_name] = not self.sort_orders[column_name]
             else:
-                sort_direction = not self.sort_orders[column_name]
+                self.sort_orders[column_name]  = True
+            sort_direction = not self.sort_orders[column_name]
+            
+        # Prevent redundant sorting
+        elif self.current_sort == column_name:
+            if sort_direction != self.sort_orders.get(column_name, True):
+                return
         
-        df.sort_values(by=[column_name, 'Date', 'Amount', 'Account', 'Category'], ascending=sort_direction, inplace=True)
         self.sort_orders[column_name] = not sort_direction  # Toggle order for next sort
+        df.sort_values(by=[column_name, 'Date', 'Amount', 'Account', 'Category'], ascending=sort_direction, inplace=True)
         
         for item in table.get_children():
             table.delete(item)
