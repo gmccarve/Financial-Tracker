@@ -109,7 +109,7 @@ class FinanceTracker(tk.Tk):
         self.selectFilesAndFolders(reload=True)
         self.showMainFrame(start_fresh=False)
         
-        #self.showSpending()
+        self.showSpending()
         #self.destroy()
         
         return
@@ -1028,7 +1028,187 @@ class FinanceTracker(tk.Tk):
         def displayStatisticsSummary(df, categories, df_type):
             """Displays a financial account summary in two separate tables."""
             
-            def showMonthBreakdown(col):
+            def showMonthlyCategoryBreakdown(month_name):
+                """Display a breakdown of all account statistics for the selected month, with an interactive plot."""
+                
+                # Precompute monthly transactions using `groupby`
+                def computeMonthlyStats(df):
+                    """Compute account statistics for the selected month."""
+                    filtered_df = df[pd.to_datetime(df['Date']).dt.year == year]
+                    filtered_df = filtered_df[pd.to_datetime(filtered_df["Date"]).dt.month == month]
+                    return filtered_df
+            
+                # Determine the index of the selected month
+                month, year = month_name[0], month_name[1]
+            
+                # Create a popup window
+                top = tk.Toplevel(self)
+                text = self.formatMonthYear(month, year)
+                if df_type == 'INCOME':
+                    text = text + " Savings"
+                else:
+                    text = text + " Spending"
+                top.title(f"{text} Breakdown")
+            
+                # Create a Treeview for displaying breakdown data
+                category_tree = ttk.Treeview(top, columns=["Category", 
+                                                           "Total Spent", 
+                                                           "Number of\nTransactions", 
+                                                           "Average\nTransaction", 
+                                                           "Median\nTransaction", 
+                                                           "Largest\nTransaction",
+                                                           "Smallest\nTransaction", 
+                                                           "Category\nPercentage (%)"], 
+                        show="headings", selectmode="none", height=5)
+                
+                # Apply standard formatting for table
+                style = ttk.Style()
+                self.goodLookingTables(style)
+                style.configure("Treeview.Heading", padding=(5,25), anchor='center', justify='center')
+                style.layout("Treeview.Heading", [
+                                                    ("Treeheading.cell", {"sticky": "nswe"}),  # Stretches the header cell
+                                                    ("Treeheading.border", {"sticky": "nswe"}),  # Ensures full stretch
+                                                    ("Treeheading.padding", {"sticky": "nswe"}),  # Applies padding in all directions
+                                                    ("Treeheading.label", {"sticky": "nswe"})  # Ensures text is centered in the label
+                                                ])
+            
+                # Column settings
+                column_widths = {"Category": 180, 
+                                 "Total Spent": 140, 
+                                 "Number of Transactions": 140, 
+                                 "Average Transaction": 140, 
+                                 "Median Transaction": 140, 
+                                 "Largest Transaction": 140, 
+                                 "Smallest Transaction": 140,
+                                 "Category \nPercentage (%)": 140}
+
+                # get minimum size of window
+                window_width = sum(column_widths.values()) + 20
+                            
+                for col in category_tree["columns"]:
+                    category_tree.heading(col, text=col, anchor="center")
+                    width = column_widths.get(col, 150)
+                    category_tree.column(col, width=width, anchor=tk.E if col != "Category" else tk.W, stretch=tk.NO)
+            
+                # Compute min/max/transaction counts
+                if df_type == "INCOME":
+                    totals = computeMonthlyStats(self.income_data.copy())
+                else:
+                    totals = computeMonthlyStats(self.expenses_data.copy())
+                
+                # Iterate over categories and compute values
+                count = 0
+                
+                tag = 'oddrow'
+                
+                total_overall = totals['Amount'].sum()
+                
+                #TODO sort when header is clicked
+                #TODO add total at bottom of table
+                #TODO add piechart at bottom of window
+                #TODO add table next to piechart that shows all transaction for a clicked on category
+
+                for category in categories:
+                    
+                    # Alternating row colors for readability
+                    tag = "oddrow" if tag == "evenrow" else "evenrow"
+                    
+                    category_data  = totals[totals['Category'] == category]
+                    
+                    # Get useful breakdown values
+                    total = category_data['Amount'].sum()
+                    
+                    if total == 0.00:
+                        num_transactions = 0
+                        average_transaction = 0
+                        median_transaction = 0
+                        largest_transaction = 0
+                        smallest_transaction = 0
+                        category_percentage = 0
+                        
+                    else:
+                        num_transactions = category_data.shape[0]
+                        average_transaction = category_data['Amount'].mean()
+                        median_transaction = category_data['Amount'].median()
+                        largest_transaction = category_data['Amount'].max()
+                        smallest_transaction = category_data['Amount'].min()
+                        category_percentage = (total / total_overall) * 100 if total_overall != 0 else 0  # Avoid division by zero
+                    
+                    # Format and insert data
+                    category_tree.insert("", 
+                                tk.END, 
+                                values=[category, 
+                                        f"${total/100.:,.2f}", 
+                                        f"{num_transactions}", 
+                                        f"${average_transaction/100.:,.2f}", 
+                                        f"${median_transaction/100.:,.2f}", 
+                                        f"${largest_transaction/100.:,.2f}",
+                                        f"${smallest_transaction/100.:,.2f}",
+                                        f"{category_percentage:.1f}%"], 
+                                tags=(tag,))
+                    
+                    count += 1
+            
+                    # Apply row styles
+                    category_tree.tag_configure("oddrow",    background=self.banded_row[0])
+                    category_tree.tag_configure("evenrow",   background=self.banded_row[1])
+                    
+       
+                """Plot the data for a selected account"""
+                
+                # Grid placement of widgets
+                category_tree.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
+                #plot_widget.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
+                #toolbar.grid(row=3, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+            
+                # Configure column resizing
+                top.grid_columnconfigure(0, weight=1)  # Left empty space
+                top.grid_columnconfigure(2, weight=1)  # Right empty space
+                top.grid_rowconfigure(0, weight=1)  # Table expands
+                top.grid_rowconfigure(2, weight=2)  # Plot expand
+                
+                # Override the Home button's functionality
+            
+                # Resize window dynamically
+                def updateTableSizes(event):
+                    """Dynamically adjust the table sizes for both income and expense tables."""
+                    new_width = top.winfo_width()
+                    
+                    total_fixed_width = sum(column_widths.values())
+                    scale_factor = new_width / total_fixed_width * 0.95
+                    
+                    try:
+                    
+                        # Adjust column width dynamically based on window width
+                        if event is None or new_width != self.account_breakdown_window_width:
+                            self.account_breakdown_window_width = new_width            
+                            for col in category_tree["columns"]:
+                                width = int(column_widths.get(col, 140) * scale_factor)
+                                category_tree.column(col, width=width)
+                    except:
+                        pass
+                    
+                    self.update_idletasks()
+                    
+                window_height = len(categories) * 32
+                self.openRelativeWindow(top, width=window_width, height=window_height)
+                top.resizable(True, True)
+                self.account_breakdown_window_width = top.winfo_width()            
+                            
+                # Bind the function to window resizing
+                top.bind("<Configure>", updateTableSizes)
+                
+                updateTableSizes(event=None)
+                
+                def exitWindow(event=None):
+                    top.destroy()
+                            
+                # Bind Escape keys
+                category_tree.bind("<Escape>", exitWindow)
+                
+                category_tree.focus_set()
+               
+                return                
                 return
             
             def populateBalanceTree(date_tree, summary_df, months_list, categories):
@@ -1052,7 +1232,7 @@ class FinanceTracker(tk.Tk):
                 # Apply column order and update headers
                 date_tree["columns"] = months_list
                 for col in months_list:
-                    date_tree.heading(col, text=self.formatMonthLastDayYear(col[0], col[1]), anchor=tk.CENTER, command=lambda c=col: showMonthBreakdown(c))
+                    date_tree.heading(col, text=self.formatMonthLastDayYear(col[0], col[1]), anchor=tk.CENTER, command=lambda c=col: showMonthlyCategoryBreakdown(c))
                     date_tree.column(col, width=column_widths[col], anchor=tk.E, stretch=tk.NO)
             
                 # Clear previous table content
@@ -1105,7 +1285,7 @@ class FinanceTracker(tk.Tk):
                     months_list.reverse()  # Reverse the column order
                     
                     # Call populateBalanceTree to apply changes
-                    populateBalanceTree(date_tree, summary_df, months, categories)
+                    populateBalanceTree(date_tree, summary_df, months_list, categories)
                 
                 return
                 
@@ -1184,11 +1364,11 @@ class FinanceTracker(tk.Tk):
                 
                 return
             
-            def showColumnMenu(event, date_tree, category_tree, months_list):
+            def showColumnMenu(event=None, date_tree=ttk.Treeview, category_tree=ttk.Treeview, months_list=[]):
                 """ Open column menu """
                 menu = tk.Menu(self, tearoff=0)
                 
-                menu.add_command(label="Reverse Order", command=lambda event: reverseOrder(event, date_tree, months_list))
+                menu.add_command(label="Reverse Order", command=lambda: reverseOrder(event, date_tree, months_list))
                 menu.add_command(label="Change Displayed Months", command=lambda: changeMonthsDisplayed(date_tree, category_tree, months_list))
                 
                 menu.post(event.x_root, event.y_root)
@@ -1203,8 +1383,6 @@ class FinanceTracker(tk.Tk):
             table_frame = ttk.Frame(self.main_frame)
             table_frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
             
-            
-        
             # Extract month-year columns
             months = self.all_months.copy()
             
@@ -1225,9 +1403,6 @@ class FinanceTracker(tk.Tk):
             category_tree.heading("Categories", text="Categories", anchor=tk.W)
             category_tree.column("Categories", width=200, anchor=tk.W, stretch=tk.NO)
             category_tree.pack(side=tk.LEFT, fill=tk.Y)
-            
-            category_tree.bind("<Button-1>", lambda event: reverseOrder(event, date_tree, months))
-            category_tree.bind("<Button-3>", lambda event: showColumnMenu(event, date_tree, category_tree, months))
         
             # Create a frame for the main Treeview and scrollbar
             data_frame = ttk.Frame(table_frame)
@@ -1264,6 +1439,9 @@ class FinanceTracker(tk.Tk):
             # Bind mouse scrolling events
             date_tree.bind("<MouseWheel>", lambda event: onMouseWheel(event, date_tree, category_tree))
             category_tree.bind("<MouseWheel>", lambda event: onMouseWheel(event, date_tree, category_tree))
+            
+            category_tree.bind("<Button-1>", lambda event: reverseOrder(event, date_tree, months))
+            category_tree.bind("<Button-3>", lambda event: showColumnMenu(event, date_tree, category_tree, months))
         
             # Keep the window size dynamic
             window_height = max(len(categories) * 30, 400)
