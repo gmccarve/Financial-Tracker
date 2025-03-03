@@ -1,11 +1,13 @@
 Car Insurance
 Car Maintenance
+Cat
 Credit Card Payment
 Eating Out
 Electricity
+Furniture
 Gas
 Groceries
-Housing
+House Goods
 Hyundai Loan
 Interest Payment
 Internet
@@ -19,9 +21,9 @@ Rent
 Shopping
 Student Loans
 Subscriptions
+Technology
 Transfer to Checking
 Transfer to Savings
 Transfers
 Travel
 Work
-Cat

@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.text import OffsetFrom
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+import seaborn as sns
 import calendar
 from datetime import datetime, timedelta
 
@@ -19,6 +20,206 @@ from typing import List, Tuple, Union
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
 pd.set_option('display.float_format','{:.2f}'.format)
+
+class Windows:
+    @staticmethod
+    def openRelativeWindow(new_window, main_width: int, main_height: int, width: int, height: int) -> None:
+        """
+        Positions the new window relative to the main application window.
+    
+        This ensures that the new window appears slightly offset from the main window.
+    
+        Parameters:
+            new_window: The new Tkinter window to be positioned.
+            main_width  (int): The current width of new_window
+            main_height (int): The current height of new_window
+            width       (int): The width of the new window.
+            height      (int): The height of the new window.
+    
+        Returns:
+            None
+        """    
+        # Position new window slightly offset from the main window
+        new_x = main_width  + 50
+        new_y = main_height + 50
+    
+        new_window.geometry(f"{width}x{height}+{new_x}+{new_y}")  # Format: "WIDTHxHEIGHT+X+Y"
+
+class Utility:
+    @staticmethod
+    def getCategoryTypes(name: str) -> Tuple[List[str], str]:
+        """
+        Retrieves category types from the appropriate file.
+    
+        Parameters:
+            name (str): If 'inc', loads income categories; otherwise, loads spending categories.
+    
+        Returns:
+            Tuple[List[str], str]: A sorted list of category names and the full path to the category file.
+        """
+        file_name = "IncomeCategories.txt" if name == 'inc' else "SpendingCategories.txt"
+        cat_file = os.path.join(os.path.dirname(__file__), file_name)
+        
+        with open(cat_file) as ff:
+            categories = [cat.strip() for cat in ff.readlines()]  # Strip newline characters
+
+        return sorted(categories), cat_file
+    
+    def generateMonthYearList(start_date: datetime, end_date: datetime) -> List[Tuple[int, int]]:
+        """
+        Generates a list of (month, year) tuples between two datetime objects.
+    
+        Parameters:
+            start_date: The starting datetime object.
+            end_date: The ending datetime object.
+            
+        Returns:
+            List of tuples in the format (month, year).
+        """
+        current_date = datetime(start_date.year, start_date.month, 1)
+        end_date = datetime(end_date.year, end_date.month, 1)
+        
+        month_year_list = []
+    
+        while current_date <= end_date:
+            month_year_list.append((current_date.month, current_date.year))
+            
+            # Move to the next month
+            next_month = current_date.month + 1
+            next_year = current_date.year + (1 if next_month > 12 else 0)
+            current_date = datetime(next_year, 1 if next_month > 12 else next_month, 1)
+
+        return month_year_list
+    
+    def formatMonthYear(month: int, year: int) -> datetime:
+        """
+        Convert a month and year into the format 'MM 'YY'.
+        
+        Parameters:
+            month (int): The month
+            year (int): The year
+            
+        Returns:
+            A (str) in the format "Mon 'YY"
+        """
+        return datetime(year, month, 1).strftime("%b '%y")
+    
+    def formatMonthLastDayYear(month: int, year: int) -> datetime:
+        """
+        Convert a month and year into the format 'Mon 'YY'.
+        
+        Parameters:
+            month (int): The month
+            year (int): The year
+            
+        Returns:
+            The last day of a month given as a string in the format "MM DD 'YY"
+        """
+        last_day = (datetime(year, month + 1, 1) - timedelta(days=1)).day
+        return datetime(year, month, last_day).strftime("%b %d, '%y")
+
+class DataFrameProcessor:
+    @staticmethod
+    def getDataFrameIndex(df: pd.DataFrame) -> pd.DataFrame:
+        """
+       Ensures that the 'Index' column exists and is correctly set as the first column.
+
+       If the 'Index' column does not exist, it is created from the DataFrame's index.
+       If it already exists, it is removed and reinserted as the first column.
+
+       Parameters:
+       - df (pd.DataFrame): The input DataFrame.
+
+       Returns:
+       - pd.DataFrame: Updated DataFrame with 'Index' as the first column.
+       """
+        if 'Index' not in df:
+            df.insert(0, 'Index', df.index)
+        else:
+            df = df.drop('Index', axis=1)
+            df.insert(0, 'Index', df.index)
+        return df
+    
+    def convertToDatetime(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Converts the 'Date' column in a DataFrame to datetime format, ensuring proper formatting.
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame containing a 'Date' column.
+
+        Returns:
+        - pd.DataFrame: Updated DataFrame with the 'Date' column converted to datetime format.
+        """
+        df['Date'] = pd.to_datetime(df['Date'], dayfirst=False, format='mixed').dt.date
+        return df
+    
+    def sortDataFrame(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Sorts a DataFrame based on 'Date', 'Amount', 'Account', and 'Category' columns.
+
+        Sorting is done in ascending order for all specified columns.
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame.
+
+        Returns:
+        - pd.DataFrame: Sorted DataFrame with a reset index.
+        """
+        df = df.sort_values(by=['Date', 'Amount', 'Account', 'Category'], ascending=True, inplace=False).reset_index(drop=True) 
+        return df
+    
+    def getStartEndDates(df: pd.DataFrame) -> Tuple[pd.Timestamp, pd.Timestamp]:
+        """
+        Retrieves the earliest and latest dates from the 'Date' column of the DataFrame.
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame containing a 'Date' column.
+
+        Returns:
+        - Tuple[pd.Timestamp, pd.Timestamp]: A tuple containing the earliest and latest dates.
+        """
+        return df['Date'].min(), df['Date'].max()
+    
+    def removeEmptyAmounts(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Removes rows where the 'Amount' column is 0.00.
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame containing an 'Amount' column.
+
+        Returns:
+        - pd.DataFrame: Cleaned DataFrame with non-zero 'Amount' values and reset index.
+        """
+        return df[df['Amount'] != 0].reset_index(drop=True)
+    
+    def getMinMaxVals(df: pd.DataFrame) -> Tuple[float, float]:
+        """
+        Computes the minimum and maximum values of the 'Amount' column in the DataFrame.
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame containing an 'Amount' column.
+
+        Returns:
+        - Tuple[float, float]: A tuple containing (min_value, max_value) from the 'Amount' column.
+        """
+        return df['Amount'].min(), df['Amount'].max()
+    
+    def findMismatchedCategories( df: pd.DataFrame, df_type: str) -> pd.DataFrame:
+        """
+        Identifies and marks categories that are not found in the predefined category list.
+
+        Categories that are not in the list will be prefixed with an asterisk (*).
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame containing a 'Category' column.
+        - df_type (str): The type of DataFrame ('inc' for income, 'exp' for expenses).
+
+        Returns:
+        - pd.DataFrame: Updated DataFrame with mismatched categories marked with an asterisk (*).
+        """
+        cat_list, _ = Utility.getCategoryTypes(df_type)
+        df['Category'] = df['Category'].astype(str).apply(lambda x: f"*{x}" if x.strip() not in map(str.strip, map(str, cat_list)) else x)
+        return df
 
 class FinanceTracker(tk.Tk):
     def __init__(self):
@@ -109,7 +310,7 @@ class FinanceTracker(tk.Tk):
         self.selectFilesAndFolders(reload=True)
         self.showMainFrame(start_fresh=False)
         
-        #self.showSpending()
+        self.showSpending()
         #self.destroy()
         
         return
@@ -195,59 +396,6 @@ class FinanceTracker(tk.Tk):
             tree: The ttk.Treeview widget to be cleared.
         """
         tree.delete(*tree.get_children())
-    
-    def generateMonthYearList(self, start_date: datetime, end_date: datetime) -> List[Tuple[int, int]]:
-        """
-        Generates a list of (month, year) tuples between two datetime objects.
-    
-        Parameters:
-            start_date: The starting datetime object.
-            end_date: The ending datetime object.
-            
-        Returns:
-            List of tuples in the format (month, year).
-        """
-        current_date = datetime(start_date.year, start_date.month, 1)
-        end_date = datetime(end_date.year, end_date.month, 1)
-        
-        month_year_list = []
-    
-        while current_date <= end_date:
-            month_year_list.append((current_date.month, current_date.year))
-            
-            # Move to the next month
-            next_month = current_date.month + 1
-            next_year = current_date.year + (1 if next_month > 12 else 0)
-            current_date = datetime(next_year, 1 if next_month > 12 else next_month, 1)
-
-        return month_year_list
-    
-    def formatMonthYear(self, month: int, year: int) -> datetime:
-        """
-        Convert a month and year into the format 'MM 'YY'.
-        
-        Parameters:
-            month (int): The month
-            year (int): The year
-            
-        Returns:
-            A (str) in the format "Mon 'YY"
-        """
-        return datetime(year, month, 1).strftime("%b '%y")
-    
-    def formatMonthLastDayYear(self, month: int, year: int) -> datetime:
-        """
-        Convert a month and year into the format 'Mon 'YY'.
-        
-        Parameters:
-            month (int): The month
-            year (int): The year
-            
-        Returns:
-            The last day of a month given as a string in the format "MM DD 'YY"
-        """
-        last_day = (datetime(year, month + 1, 1) - timedelta(days=1)).day
-        return datetime(year, month, last_day).strftime("%b %d, '%y")
     
     def showMonthlyBreakdown(self, event=None):
         """Show Accounts section."""
@@ -357,7 +505,7 @@ class FinanceTracker(tk.Tk):
         
             # Create a popup window
             top = tk.Toplevel(self)
-            text = self.formatMonthYear(month, year)
+            text = Utility.formatMonthYear(month, year)
             top.title(f"{text} Account Breakdown")
         
             # Create a Treeview for displaying breakdown data
@@ -538,11 +686,11 @@ class FinanceTracker(tk.Tk):
                         old_date = all_data.iloc[i-1]['Date']
                     
                     # Vertical step (transaction occurs)
-                    ax.plot([date, date], [old_value, new_amount], linestyle='-', color=color)
+                    ax.plot([date, date], [old_value, new_amount], linestyle=(0, (5, 2, 1, 2)), color=color)
                     
                     # Horizontal step (date change)
                     if date != old_date and i < len(all_dates):
-                        ax.plot([old_date, date], [old_value, old_value], linestyle='-', color='purple')
+                        ax.plot([old_date, date], [old_value, old_value], linestyle=(0, (5, 2, 1, 2)), color='purple')
                         
                     ax.scatter(date, new_amount, color=color, marker='o', s=50, zorder=4)
                     
@@ -556,7 +704,7 @@ class FinanceTracker(tk.Tk):
                                         "Balance": new_amount})
                                     
                 # End with the ending balance after the last transaction
-                ax.plot([date, ending_date], [ending_balance, ending_balance], linestyle='-', color='purple')
+                ax.plot([date, ending_date], [ending_balance, ending_balance], linestyle=(0, (5, 2, 1, 2)), color='purple')
                 step_dates.append(ending_date)
                 step_balances.append(ending_balance)  # Balance after transaction
                 step_values.append({"Date": ending_date, 
@@ -710,7 +858,7 @@ class FinanceTracker(tk.Tk):
                     selected_account = tree.item(selected_item, "values")[0]  # Get selected account name
                     plotAccountBalance(selected_account)
             
-            def reset_view(event=None):
+            def resetView(event=None):
                 """Resets the plot view to the original limits."""
                 ax.set_xlim(original_xlim)  # Restore x-axis limits
                 ax.set_ylim(original_ylim)  # Restore y-axis limits
@@ -736,7 +884,7 @@ class FinanceTracker(tk.Tk):
             top.grid_rowconfigure(2, weight=2)  # Plot expand
             
             # Override the Home button's functionality
-            toolbar.home = reset_view
+            toolbar.home = resetView
             
             def updateTableSizes(event):
                 """Dynamically adjust the table sizes for both income and expense tables."""
@@ -760,7 +908,7 @@ class FinanceTracker(tk.Tk):
         
             # Resize window dynamically
             window_height = len(account_summary) * 32 + 250
-            self.openRelativeWindow(top, width=window_width, height=window_height)
+            Windows.openRelativeWindow(top, main_width=self.winfo_x(), main_height=self.winfo_y(), width=window_width, height=window_height)
             top.resizable(True, True)
             self.account_breakdown_window_width = top.winfo_width()            
                         
@@ -803,7 +951,7 @@ class FinanceTracker(tk.Tk):
                 # Apply column order and update headers
                 tree["columns"] = months_list
                 for col in months_list:
-                    tree.heading(col, text=self.formatMonthLastDayYear(col[0], col[1]), anchor=tk.CENTER, command=lambda c=col: showMonthBreakdown(c))
+                    tree.heading(col, text=Utility.formatMonthLastDayYear(col[0], col[1]), anchor=tk.CENTER, command=lambda c=col: showMonthBreakdown(c))
                     tree.column(col, width=column_widths[col], anchor=tk.E, stretch=tk.NO)
             
                 # Clear previous table content
@@ -865,7 +1013,7 @@ class FinanceTracker(tk.Tk):
                 
                 top = tk.Toplevel(self)
                 top.title("Select Number of Months to Display")
-                self.openRelativeWindow(top, width=350, height=200)
+                Windows.openRelativeWindow(top, main_width=self.winfo_x(), main_height=self.winfo_y(), width=350, height=200)
                 top.resizable(False, False)
             
                 tk.Label(top, text="Select Number of Months to Display:", font=(self.font_type, self.font_size)).pack(pady=10)
@@ -1011,7 +1159,7 @@ class FinanceTracker(tk.Tk):
         self.clearMainFrame()
         
         # Define months for table columns
-        self.all_months = self.generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
+        self.all_months = Utility.generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
         self.number_of_months_displayed = min(len(self.all_months),12)
         
         # Get initial balances
@@ -1077,15 +1225,19 @@ class FinanceTracker(tk.Tk):
                 
                     # Define colors for tags
                     tv.tag_configure("evenrow", background=self.banded_row[0])
-                    tv.tag_configure("oddrow", background=self.banded_row[1]) 
-                            
+                    tv.tag_configure("oddrow", background=self.banded_row[1])                  
                     
                 # Determine the index of the selected month
                 month, year = month_name[0], month_name[1]
             
                 # Create a popup window
                 top = tk.Toplevel(self)
-                text = self.formatMonthYear(month, year)
+                try:
+                    top.state("zoomed")
+                except:
+                    top.attributes("-zoomed", True)
+                text = Utility.formatMonthYear(month, year)
+                
                 if df_type == 'INCOME':
                     text = text + " Savings"
                 else:
@@ -1116,7 +1268,7 @@ class FinanceTracker(tk.Tk):
                         column_widths[col] = small_width
 
                 # get minimum size of window
-                window_width = sum(column_widths.values()) + 20
+                window_width = (sum(column_widths.values()) + 20)
                             
                 for col in category_tree["columns"]:
                     category_tree.heading(col, text=col, anchor="center", command=lambda c=col: treeviewSortColumn(category_tree, c, False))
@@ -1132,8 +1284,6 @@ class FinanceTracker(tk.Tk):
                 # Total value for month
                 total_overall = totals['Amount'].sum()
                 
-                #TODO add total at bottom of table
-                #TODO add piechart at bottom of window
                 #TODO add table next to piechart that shows all transaction for a clicked on category
 
                 for category in categories:
@@ -1167,54 +1317,304 @@ class FinanceTracker(tk.Tk):
                     
                 applyBandedRows(category_tree)
        
-                """Plot the data for a selected account"""
-                #chart_frame = tk.Frame(self)
-                #chart_frame.pack()
+                """Plot the data for a selected account"""  
+                
+                # Dropdown menu for information breakdown
+                plot_types = [
+                                "Category Breakdown Pie Chart",
+                                "Spending Over Time (Line Chart)",
+                                "Bar Chart: Most Expensive Categories",
+                                "Boxplot: Transaction Variability",
+                                "Heatmap: Spending by Day of the Week"
+                            ]
+                selected_chart = tk.StringVar(value=plot_types[0])
+                chart_dropdown = ttk.Combobox(top, textvariable=selected_chart, values=plot_types, state="readonly")
                 
                 # Create Matplotlib Figure
-                #fig, ax = plt.subplots(figsize=(5, 3))
-                #canvas = FigureCanvasTkAgg(fig, master=chart_frame)
-                #canvas.get_tk_widget().pack()
-
+                fig, ax = plt.subplots(figsize=(4, 4))
+                canvas = FigureCanvasTkAgg(fig, master=top)
+                plot_widget = canvas.get_tk_widget()
                 
-                # Grid placement of widgets
-                category_tree.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
-                #plot_widget.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
-                #toolbar.grid(row=3, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
-            
-                # Configure column resizing
-                top.grid_columnconfigure(0, weight=1)  # Left empty space
-                top.grid_columnconfigure(2, weight=1)  # Right empty space
-                top.grid_rowconfigure(0, weight=1)  # Table expands
-                top.grid_rowconfigure(2, weight=2)  # Plot expand
+                # Add the Matplotlib Toolbar
+                toolbar = NavigationToolbar2Tk(canvas, top, pack_toolbar=False)
+                toolbar.update()
+                
+                # Store original y-axis limits before modifying the plot
+                original_xlim = ax.get_xlim()
+                original_ylim = ax.get_ylim()
+                
+                def plotPieChart():
+                    """Category Breakdown Pie Chart"""
+                    
+                    def onPieClick(event):
+                        """Detects clicks on pie chart sections and updates the breakdown table."""
+                        for wedge in ax.patches:
+                            if wedge.contains_point((event.x, event.y)):  # Check if a slice was clicked
+                                category = wedge.get_gid()  # Get the category name
+                                if category:
+                                    updateSubCategoryBreakdown(category)
+                                    return
+                                
+                    ax.clear()
+                
+                    # Compute category totals
+                    category_totals = totals.groupby("Category")["Amount"].sum()
+                    
+                    # Exclude specific categories
+                    exclude_categories = ["Credit Card Payment"]
+                    category_totals = category_totals[~category_totals.index.isin(exclude_categories)]
+                    category_totals = category_totals[~category_totals.index.str.contains("Transfer|Work", case=False, na=False)]
+
+                    # Sort categories from highest to lowest spending
+                    category_totals = category_totals.sort_values(ascending=False)
+                
+                    # Calculate percentage values
+                    total_spent = category_totals.sum()
+                    percentages = (category_totals / total_spent) * 100
+                
+                    # Filter out categories with 0% contribution
+                    category_totals = category_totals[percentages > 0]
+                    percentages = percentages[percentages > 0]
+                
+                    # Define colors
+                    colors = plt.cm.Paired.colors[:len(category_totals)]  # Use a color palette
+                
+                    # Define how many categories get direct labels
+                    num_labeled_categories = 10  # Adjust this number if needed
+                
+                    # Create label texts (only for top categories)
+                    labels = [f"{cat}" if i < num_labeled_categories else "" 
+                              for i, (cat, pct) in enumerate(zip(category_totals.index, percentages))]
+                    
+                    # Move the pie chart to the left using `ax.set_position()`
+                    #ax.set_position([0.05, 0.1, 0.4, 0.8])  # [Left, Bottom, Width, Height]
+                
+                    # Plot the pie chart
+                    wedges, texts, autotexts = ax.pie(
+                        category_totals, labels=labels, autopct=lambda p: f"{p:.1f}%" if p > 2 else "",
+                        startangle=90, colors=colors, wedgeprops={'edgecolor': 'black'},
+                        pctdistance=0.85
+                    )
+                    
+                    # Store category names in wedges for click detection
+                    for wedge, category in zip(wedges, category_totals.index):
+                        wedge.set_gid(category)  # Assign category name as ID
+                
+                    # Connect the click event to the function
+                    canvas.mpl_connect("button_press_event", onPieClick)
+                    
+                    # Improve text readability
+                    for text in autotexts:
+                        text.set_fontsize(10)
+                        text.set_color("black")
+                
+                    # Ensure the chart is a circle (not an ellipse)
+                    ax.set_title("Spending Breakdown by Category", fontsize=12, fontweight="bold")
+                    ax.axis("equal")  
+                
+                    # Update the canvas
+                    canvas.draw()
+                
+                def plotExpensiveCategories():
+                    """Bar Chart: Most Expensive Categories."""
+                    ax.clear()
+                    category_totals = df.groupby("Category")["Amount"].sum().sort_values(ascending=False)
+                    ax.bar(category_totals.index, category_totals.values, color="red")
+                    ax.set_title("Most Expensive Categories")
+                    ax.set_xlabel("Category")
+                    ax.set_ylabel("Total Spending ($)")
+                    plt.xticks(rotation=45)
+                    canvas.draw()
+                
+                def plotBoxplot():
+                    """Boxplot: Transaction Variability."""
+                    ax.clear()
+                    sns.boxplot(x="Category", y="Amount", data=totals, ax=ax)
+                    ax.set_title("Transaction Variability by Category")
+                    ax.set_xlabel("Category")
+                    ax.set_ylabel("Amount ($)")
+                    plt.xticks(rotation=45)
+                    canvas.draw()
+                
+                def plotHeatmap():
+                    """Heatmap: Spending by Day of the Week."""
+                    ax.clear()
+                    df["Day of Week"] = df["Date"].dt.day_name()
+                    heatmap_data = df.groupby("Day of Week")["Amount"].sum().reindex(
+                        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                    )
+                    sns.heatmap(pd.DataFrame(heatmap_data), annot=True, cmap="coolwarm", ax=ax, fmt=".0f")
+                    ax.set_title("Spending by Day of the Week")
+                    canvas.draw()
+                
+                # Function to Update the Chart Based on Selection
+                def updateChart(event=None):
+                    """Update the displayed chart based on ComboBox selection."""
+                    chart_type = selected_chart.get()
+                
+                    if chart_type == "Category Breakdown Pie Chart":
+                        plotPieChart()
+                    elif chart_type == "Spending Over Time (Line Chart)":
+                        plotSpendingOverTime()
+                    elif chart_type == "Bar Chart: Most Expensive Categories":
+                        plotExpensiveCategories()
+                    elif chart_type == "Boxplot: Transaction Variability":
+                        plotBoxplot()
+                    elif chart_type == "Heatmap: Spending by Day of the Week":
+                        plotHeatmap()
+                
+                # Bind ComboBox to the Update Function
+                chart_dropdown.bind("<<ComboboxSelected>>", updateChart)
+                
+                def resetView(event=None):
+                    """Resets the plot view to the original limits."""
+                    ax.set_xlim(original_xlim)  # Restore x-axis limits
+                    ax.set_ylim(original_ylim)  # Restore y-axis limits
+                    canvas.draw_idle()  # Redraw the figure
+        
+                def sortBreakdownTable(event=None, column=""):
+                    return
+                
+                # Create a Label for the breakdown table title
+                breakdown_title = tk.Label(top, text="Category Breakdown", font=(self.font_type, self.font_size+2, "bold"), anchor="center")
+                
+                # Ensure correct column names
+                breakdown_columns = [str(col) for col in totals.columns]
+                
+                breakdown_tree = ttk.Treeview(top, columns=breakdown_columns, show="headings", selectmode="none", height=5)
+                
+                # Define preset column widths
+                breakdown_columns_widths = {
+                    "Index":0,
+                    "Date": 150,
+                    "Description": 500,
+                    "Amount": 110,
+                    "Account": 150,
+                    "Category": 0
+                }
+                
+                # Apply styling
+                style = ttk.Style()
+                self.goodLookingTables(style)
+                
+                # Configure column headings
+                for col in breakdown_columns:
+                    if col in breakdown_tree["columns"]:  # Ensure column is valid
+                        breakdown_tree.heading(col, text=col, anchor="center", command= lambda event: sortBreakdownTable(event, col))
+                        width = breakdown_columns_widths.get(col, 100)
+                        breakdown_tree.column(col, width=width, anchor=tk.W, stretch=tk.NO)
+                applyBandedRows(breakdown_tree)
+
+                def updateSubCategoryBreakdown(category=category):
+                    """Updates breakdown_tree to show transactions for the selected category."""
+    
+                    # Update the title with the selected category
+                    breakdown_title.config(text=f"Transactions for {category}")
+    
+                    # Clear existing rows in the Treeview
+                    for item in breakdown_tree.get_children():
+                        breakdown_tree.delete(item)
+                
+                    # Filter DataFrame for the selected category
+                    filtered_df = totals[totals["Category"] == category]
+                
+                    # Populate breakdown_tree with the filtered transactions
+                    for _, row in filtered_df.iterrows():
+                        values = list(row)
+                        values[3] = f"${values[3]/100:.2f}"  # Format amount as currency
+                        breakdown_tree.insert("", "end", values=values)
+                        applyBandedRows(breakdown_tree)
+                        
+                def onCategorySelect(event):
+                    """Handles category selection and updates transaction breakdown."""
+                    # Get selected row(s) in category_tree
+                    selected_item = category_tree.focus()
+                
+                    if selected_item:  # Ensure something was selected
+                        # Extract the category from the first column of the selected row
+                        category = category_tree.item(selected_item, "values")[0]
+                
+                        # Call function to update breakdown_tree with this category's transactions
+                        updateSubCategoryBreakdown(category)
+                
+                def resetView(event=None):
+                    """Resets the plot view to the original limits."""
+                    ax.set_xlim(original_xlim)  # Restore x-axis limits
+                    ax.set_ylim(original_ylim)  # Restore y-axis limits
+                    canvas.draw_idle()  # Redraw the figure
+                    
+                def applyBandedRows(tv):
+                    """Recolors Treeview rows to maintain alternating row stripes after sorting."""
+                    for index, row in enumerate(tv.get_children('')):
+                        tag = "evenrow" if index % 2 == 0 else "oddrow"
+                        tv.item(row, tags=(tag,))
+                        
+                # Bind the function to category selection event
+                category_tree.bind("<ButtonRelease-1>", lambda event: onCategorySelect(event))
+                updateSubCategoryBreakdown(categories[0])
+
+                # Place category_tree at the top (full width)
+                category_tree.grid(row=0, column=0, columnspan=4, sticky="nsew", padx=10, pady=5)
+                
+                # Place chart dropdown and toolbar above the chart, each taking half of plot_widget's width
+                chart_dropdown.grid(row=1, column=0, columnspan=1, sticky="ew", padx=10, pady=5)
+                toolbar.grid(row=1, column=1, columnspan=1, sticky="ew", padx=5, pady=5)
+                
+                # Place title above breakdown table
+                breakdown_title.grid(row=1, column=2, columnspan=2, sticky="ew", padx=5, pady=5)  
+                
+                # Place the chart and breakdown table side by side
+                plot_widget.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=10, pady=5)
+                breakdown_tree.grid(row=2, column=2, rowspan=2, columnspan=2, sticky="nsew", padx=5, pady=5)
+                
+                # Configure column and row resizing
+                top.grid_columnconfigure(0, weight=1)  # Plot widget (left)
+                top.grid_columnconfigure(1, weight=1)  # Keeps plot balanced with toolbar
+                top.grid_columnconfigure(2, weight=1)  # Breakdown table (right)
+                top.grid_columnconfigure(3, weight=1)  # Ensures full-width balance
+                
+                top.grid_rowconfigure(0, weight=1)  # Category tree (top)
+                top.grid_rowconfigure(1, weight=0)  # Dropdown & toolbar (small space)
+                top.grid_rowconfigure(2, weight=4)  # Chart and table share space
+                top.grid_rowconfigure(3, weight=0)  # Ensures no excessive spacing below
                 
                 # Override the Home button's functionality
+                toolbar.home = resetView
             
                 # Resize window dynamically
                 def updateTableSizes(event):
                     """Dynamically adjust the table sizes for both income and expense tables."""
                     new_width = top.winfo_width()
+                    new_height = top.winfo_height()
                     
                     total_fixed_width = sum(column_widths.values())
-                    scale_factor = new_width / total_fixed_width * 0.95
+                    scale_factor = new_width / total_fixed_width * 0.98
                     
                     try:
                     
                         # Adjust column width dynamically based on window width
-                        if event is None or new_width != self.account_breakdown_window_width:
-                            self.account_breakdown_window_width = new_width            
+                        if event is None or new_width != self.statistics_window_width:
+                            self.statistics_window_width = new_width            
                             for col in category_tree["columns"]:
                                 width = int(column_widths.get(col, 140) * scale_factor)
                                 category_tree.column(col, width=width)
+                                
+                        # Adjust row count dynamically based on window height
+                        if event is None or new_height != self.statistics_window_height:
+                            self.statistics_window_height = new_height
+                            min_rows = 5
+                            max_rows = 10
+                            row_height = 35
+                            new_row_count = max(min_rows, min(max_rows, new_height // row_height))
+                    
+                            category_tree.config(height=new_row_count)
                     except:
                         pass
                     
                     self.update_idletasks()
                     
-                window_height = len(categories) * 32
-                self.openRelativeWindow(top, width=window_width, height=window_height)
                 top.resizable(True, True)
-                self.account_breakdown_window_width = top.winfo_width()            
+                self.statistics_window_width = top.winfo_width()            
                             
                 # Bind the function to window resizing
                 top.bind("<Configure>", updateTableSizes)
@@ -1224,10 +1624,11 @@ class FinanceTracker(tk.Tk):
                 def exitWindow(event=None):
                     top.destroy()
                             
-                # Bind Escape keys
-                category_tree.bind("<Escape>", exitWindow)
+                # Bind Escape key
+                top.bind("<Escape>", exitWindow)
                 
                 category_tree.focus_set()
+                plotPieChart()
                                
                 return
             
@@ -1252,7 +1653,7 @@ class FinanceTracker(tk.Tk):
                 # Apply column order and update headers
                 date_tree["columns"] = months_list
                 for col in months_list:
-                    date_tree.heading(col, text=self.formatMonthLastDayYear(col[0], col[1]), anchor=tk.CENTER, command=lambda c=col: showMonthlyCategoryBreakdown(c))
+                    date_tree.heading(col, text=Utility.formatMonthLastDayYear(col[0], col[1]), anchor=tk.CENTER, command=lambda c=col: showMonthlyCategoryBreakdown(c))
                     date_tree.column(col, width=column_widths[col], anchor=tk.E, stretch=tk.NO)
             
                 # Clear previous table content
@@ -1323,7 +1724,7 @@ class FinanceTracker(tk.Tk):
                 
                 top = tk.Toplevel(self)
                 top.title("Select Number of Months to Display")
-                self.openRelativeWindow(top, width=350, height=200)
+                Windows.openRelativeWindow(top, main_width=self.winfo_x(), main_height=self.winfo_y(), width=350, height=200)
                 top.resizable(False, False)
             
                 tk.Label(top, text="Select Number of Months to Display:", font=(self.font_type, self.font_size)).pack(pady=10)
@@ -1492,10 +1893,10 @@ class FinanceTracker(tk.Tk):
         self.clearMainFrame()
             
         # Get list of categories
-        cat_list, _ = self.getCategoryTypes(df_type)
+        cat_list, _ = Utility.getCategoryTypes(df_type)
         
         # Get list of months
-        self.all_months = self.generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
+        self.all_months = Utility.generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
         self.number_of_months_displayed = len(self.all_months)
         
         displayStatisticsSummary(df.copy(), cat_list, df_type)
@@ -1964,43 +2365,6 @@ class FinanceTracker(tk.Tk):
             
         return        
     
-    def getDataFrameIndex(self, df):
-        """Add/correct index column of dataframe"""
-        if 'Index' not in df:
-            df.insert(0, 'Index', df.index)
-        else:
-            df = df.drop('Index', axis=1)
-            df.insert(0, 'Index', df.index)
-        return df
-    
-    def convertToDatetime(self, df):
-        """Convert date formate in dataframes."""
-        df['Date'] = pd.to_datetime(df['Date'], dayfirst=False, format='mixed').dt.date
-        return df
-    
-    def sortDataFrame(self, df):
-        """Sort Dataframe by given set of columns"""
-        df = df.sort_values(by=['Date', 'Amount', 'Account', 'Category'], ascending=True, inplace=False).reset_index(drop=True) 
-        return df
-    
-    def getStartEndDates(self, df):
-        """Calculate the earliest and latest dates of the income and expenses dataframe"""  
-        return df['Date'].min(), df['Date'].max()
-    
-    def removeEmptyAmounts(self, df):
-        """Remove all rows with 0.00 in the amounts column"""
-        return df[df['Amount'] != 0].reset_index(drop=True)
-    
-    def getMinMaxVals(self, df):
-        """Calculate the minimum and maximum values of a dataframe"""
-        return df['Amount'].min(), df['Amount'].max()
-    
-    def findMismatchedCategories(self, df, df_type):
-        """Add an asterisk to categories not found in the categories list"""
-        cat_list, _ = self.getCategoryTypes(df_type)
-        df['Category'] = df['Category'].astype(str).apply(lambda x: f"*{x}" if x.strip() not in map(str.strip, map(str, cat_list)) else x)
-        return df
-    
     def setupDataFrames(self):
         """Format the expenses and income dataframes and also setup initial variables/lists"""
         
@@ -2015,20 +2379,20 @@ class FinanceTracker(tk.Tk):
             inc_empty = True
         
         # Format dataframe 'Date' columns 
-        self.income_data    = self.convertToDatetime(self.income_data)
-        self.expenses_data  = self.convertToDatetime(self.expenses_data) 
+        self.income_data    = DataFrameProcessor.convertToDatetime(self.income_data)
+        self.expenses_data  = DataFrameProcessor.convertToDatetime(self.expenses_data) 
  
         # Sort dateframes
-        self.income_data    = self.sortDataFrame(self.income_data)
-        self.expenses_data  = self.sortDataFrame(self.expenses_data)
+        self.income_data    = DataFrameProcessor.sortDataFrame(self.income_data)
+        self.expenses_data  = DataFrameProcessor.sortDataFrame(self.expenses_data)
         
         # Format dataframe 'Index' columns
-        self.income_data    = self.getDataFrameIndex(self.income_data)
-        self.expenses_data  = self.getDataFrameIndex(self.expenses_data)
+        self.income_data    = DataFrameProcessor.getDataFrameIndex(self.income_data)
+        self.expenses_data  = DataFrameProcessor.getDataFrameIndex(self.expenses_data)
         
         # Calculate earliest and latest date of dataframes for table display
-        income_start_date, income_end_date      = self.getStartEndDates(self.income_data)
-        expenses_start_date, expenses_end_date  = self.getStartEndDates(self.expenses_data)
+        income_start_date, income_end_date      = DataFrameProcessor.getStartEndDates(self.income_data)
+        expenses_start_date, expenses_end_date  = DataFrameProcessor.getStartEndDates(self.expenses_data)
         
         if exp_empty:
             self.date_range[0] = income_start_date
@@ -2043,12 +2407,12 @@ class FinanceTracker(tk.Tk):
         self.new_date_range = self.date_range.copy() 
         
         # Remove entries with 0.00 in amount column
-        self.income_data    = self.removeEmptyAmounts(self.income_data)
-        self.expenses_data  = self.removeEmptyAmounts(self.expenses_data)
+        self.income_data    = DataFrameProcessor.removeEmptyAmounts(self.income_data)
+        self.expenses_data  = DataFrameProcessor.removeEmptyAmounts(self.expenses_data)
         
         # Calculate minimum and maximum amounts for dataframes for table display
-        income_min, income_max      = self.getMinMaxVals(self.income_data)
-        expenses_min, expenses_max  = self.getMinMaxVals(self.expenses_data)
+        income_min, income_max      = DataFrameProcessor.getMinMaxVals(self.income_data)
+        expenses_min, expenses_max  = DataFrameProcessor.getMinMaxVals(self.expenses_data)
         
         self.amount_range[0][0] = income_min / 100.
         self.amount_range[0][1] = income_max / 100.
@@ -2065,8 +2429,8 @@ class FinanceTracker(tk.Tk):
         self.new_accounts = self.accounts.copy()
         
         # Determine list of categories:
-        self.inc_categories, _ = self.getCategoryTypes(name='inc')
-        self.exp_categories, _ = self.getCategoryTypes(name='exp')
+        self.inc_categories, _ = Utility.getCategoryTypes(name='inc')
+        self.exp_categories, _ = Utility.getCategoryTypes(name='exp')
         
         self.new_inc_categories = self.inc_categories.copy()
         self.new_exp_categories = self.exp_categories.copy()        
@@ -2076,8 +2440,8 @@ class FinanceTracker(tk.Tk):
         self.expenses_data["Category"]  = self.expenses_data["Category"].replace(["", None, np.nan], "Not Assigned")
         
         # Find category values that dont' match the category lists
-        self.income_data    = self.findMismatchedCategories(self.income_data, df_type='inc')
-        self.expenses_data  = self.findMismatchedCategories(self.expenses_data, df_type='exp')
+        self.income_data    = DataFrameProcessor.findMismatchedCategories(self.income_data, df_type='inc')
+        self.expenses_data  = DataFrameProcessor.findMismatchedCategories(self.expenses_data, df_type='exp')
         
         # Generate the dataframe of starting balances
         for account in self.accounts:
@@ -2356,7 +2720,7 @@ class FinanceTracker(tk.Tk):
                 tree.insert('', tk.END, values=values, tags=(tag,))
 
             # Get category list
-            cat_list, cat_file = self.getCategoryTypes(df_name)    
+            cat_list, cat_file = Utility.getCategoryTypes(df_name)    
             
             def on_cell_double_click(event):
                 """Open a small pop-up window to select a category, positioned next to the clicked cell."""
@@ -2513,25 +2877,7 @@ class FinanceTracker(tk.Tk):
         
         self.current_window = 'All Data'
         
-        return 
-
-    def getCategoryTypes(self, name: str) -> Tuple[List[str], str]:
-        """
-        Retrieves category types from the appropriate file.
-    
-        Parameters:
-            name (str): If 'inc', loads income categories; otherwise, loads spending categories.
-    
-        Returns:
-            Tuple[List[str], str]: A sorted list of category names and the full path to the category file.
-        """
-        file_name = "IncomeCategories.txt" if name == 'inc' else "SpendingCategories.txt"
-        cat_file = os.path.join(os.path.dirname(__file__), file_name)
-        
-        with open(cat_file) as ff:
-            categories = [cat.strip() for cat in ff.readlines()]  # Strip newline characters
-
-        return sorted(categories), cat_file     
+        return      
    
     def redisplayDataFrameTable(self) -> None:
         """
@@ -2554,9 +2900,7 @@ class FinanceTracker(tk.Tk):
         
         inc_data_copy = self.income_data.copy()
         exp_data_copy = self.expenses_data.copy()
-        
-        print (inc_data_copy)
-        
+
         # Apply filtering based on defined ranges
         for r, ranges in enumerate([False, self.new_date_range, False, self.new_amount_range]):
             if ranges:
@@ -2590,30 +2934,6 @@ class FinanceTracker(tk.Tk):
         # Display the filtered data
         self.displayIncExpTables(inc_data_copy, exp_data_copy)
     
-    def openRelativeWindow(self, new_window, width: int, height: int) -> None:
-        """
-        Positions the new window relative to the main application window.
-    
-        This ensures that the new window appears slightly offset from the main window.
-    
-        Parameters:
-            new_window: The new Tkinter window to be positioned.
-            width (int): The width of the new window.
-            height (int): The height of the new window.
-    
-        Returns:
-            None
-        """
-        # Get the main window's position
-        main_x = self.winfo_x()
-        main_y = self.winfo_y()
-    
-        # Position new window slightly offset from the main window
-        new_x = main_x + 50
-        new_y = main_y + 50
-    
-        new_window.geometry(f"{width}x{height}+{new_x}+{new_y}")  # Format: "WIDTHxHEIGHT+X+Y"
-    
     def showColumnMenu(self, event, table, df, df_name):
         """Show a menu when right-clicking a table heading."""
         
@@ -2645,7 +2965,7 @@ class FinanceTracker(tk.Tk):
             start_label = ttk.Label(top, text="Select Start Date:", font=self.my_font)
             start_label.pack(pady=5)
             
-            self.openRelativeWindow(top, width=235, height=500)
+            Windows.openRelativeWindow(top, main_width=self.winfo_x(), main_height=self.winfo_y(), width=235, height=500)
             
             start_cal = Calendar(top, 
                                  selectmode="day", 
@@ -2715,7 +3035,7 @@ class FinanceTracker(tk.Tk):
             # Create the modern-styled Toplevel window
             top = tk.Toplevel(self)
             top.title("Select Amount Range")
-            self.openRelativeWindow(top, width=290, height=200)
+            Windows.openRelativeWindow(top, main_width=self.winfo_x(), main_height=self.winfo_y(), width=290, height=200)
             top.resizable(False, False)
             top.configure(bg="#f8f9fa")  # Light modern background
         
@@ -2813,7 +3133,7 @@ class FinanceTracker(tk.Tk):
         
             window_height = min(max_height, max(min_height, dynamic_height))  # Auto-adjust height
             window_width = 300
-            self.openRelativeWindow(top, width=window_width, height=window_height)
+            Windows.openRelativeWindow(top, main_width=self.winfo_x(), main_height=self.winfo_y(), width=window_width, height=window_height)
             top.resizable(False, False)
             top.configure(bg="#f8f9fa")  # Light modern background
             top.attributes('-topmost', True)  # Keep on top while main window is active
@@ -2935,12 +3255,12 @@ class FinanceTracker(tk.Tk):
             """Open a window to fully edit the category list (add, remove, or update categories)."""
             
             # Retrieve category list and category file path
-            cat_list, cat_file = self.getCategoryTypes(df_name)
+            cat_list, cat_file = Utility.getCategoryTypes(df_name)
         
             # Create a popup window
             top = tk.Toplevel(self)
             top.title("Edit Categories")
-            self.openRelativeWindow(top, width=400, height=400)
+            Windows.openRelativeWindow(top, main_width=self.winfo_x(), main_height=self.winfo_y(), width=400, height=400)
             top.resizable(False, False)
             top.configure(bg="#f8f9fa")  # Light background
             top.attributes('-topmost', True)  # Keep window on top
