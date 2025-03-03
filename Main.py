@@ -68,7 +68,7 @@ class FinanceTracker(tk.Tk):
     def bindShortcuts(self):
         """Bind keyboard shortcuts to functions."""
         self.bind("<Control-a>", lambda event: self.showMonthlyBreakdown())
-        self.bind("<Control-b>", lambda event: self.showStatistics(event=event, type_of_data='inc'))
+        self.bind("<Control-b>", lambda event: self.showStatistics(event=event, df_type='inc'))
         #self.bind("<Control-c>",)
         self.bind("<Control-d>", lambda event: self.showMainFrame())
         self.bind("<Control-e>", lambda event: self.editInitialValues())
@@ -78,7 +78,7 @@ class FinanceTracker(tk.Tk):
         self.bind("<Control-i>", lambda event: self.showInvestments())
         #self.bind("<Control-j>",)
         #self.bind("<Control-k>",)
-        self.bind("<Control-l>", lambda event: self.showStatistics(event=event, type_of_data='exp'))
+        self.bind("<Control-l>", lambda event: self.showStatistics(event=event, df_type='exp'))
         #self.bind("<Control-m>",)
         self.bind("<Control-n>", lambda event: self.startFresh())
         self.bind("<Control-o>", lambda event: self.selectFilesAndFolders())
@@ -109,7 +109,7 @@ class FinanceTracker(tk.Tk):
         self.selectFilesAndFolders(reload=True)
         self.showMainFrame(start_fresh=False)
         
-        #self.showSpending()
+        self.showSpending()
         #self.destroy()
         
         return
@@ -179,7 +179,14 @@ class FinanceTracker(tk.Tk):
         """
         style.configure("Treeview", rowheight=25, font=(self.font_type, self.font_size))  # Set row height and font
         style.configure("Treeview.Heading", font=(self.font_type, self.font_size + 1, "bold"))  # Bold headers
-    
+        style.configure("Treeview.Heading", padding=(5,25), anchor='center', justify='center')
+        style.layout("Treeview.Heading", [
+                                            ("Treeheading.cell", {"sticky": "nswe"}),  # Stretches the header cell
+                                            ("Treeheading.border", {"sticky": "nswe"}),  # Ensures full stretch
+                                            ("Treeheading.padding", {"sticky": "nswe"}),  # Applies padding in all directions
+                                            ("Treeheading.label", {"sticky": "nswe"})  # Ensures text is centered in the label
+                                        ])
+
     def clearTreeview(self, tree: ttk.Treeview) -> None:
         """
         Clears all items from a Treeview widget.
@@ -1020,7 +1027,7 @@ class FinanceTracker(tk.Tk):
         
         return
         
-    def showStatistics(self, event=None, type_of_data='inc'):
+    def showStatistics(self, event=None, df_type='inc'):
         """Displays a savings summary in a Treeview table, allowing analysis by category."""
         
         #TODO Fix formatting and docstrings
@@ -1037,7 +1044,42 @@ class FinanceTracker(tk.Tk):
                     filtered_df = df[pd.to_datetime(df['Date']).dt.year == year]
                     filtered_df = filtered_df[pd.to_datetime(filtered_df["Date"]).dt.month == month]
                     return filtered_df
-            
+
+                def treeviewSortColumn(tv, col, reverse):
+                    """Sorts a Treeview column properly, handling currency values and reapplying row colors."""
+
+                    def convertValue(val):
+                        """Converts currency values ($XXX.XX) to float for sorting."""
+                        try:
+                            return float(val.replace("$", "").replace(",", "").replace("%", ""))  # Remove $ and convert to float
+                        except ValueError:
+                            return val  # Return as-is if not convertible (handles text columns)
+                
+                    # Get values and sort correctly
+                    l = [(convertValue(tv.set(k, col)), k) for k in tv.get_children('')]
+                    l.sort(reverse=reverse)
+                
+                    # Rearrange items in sorted order
+                    for index, (val, k) in enumerate(l):
+                        tv.move(k, '', index)
+                
+                    # Reapply banded row styling
+                    applyBandedRows(tv)
+                
+                    # Reverse sort next time
+                    tv.heading(col, command=lambda: treeviewSortColumn(tv, col, not reverse))
+                    
+                def applyBandedRows(tv):
+                    """Recolors Treeview rows to maintain alternating row stripes after sorting."""
+                    for index, row in enumerate(tv.get_children('')):
+                        tag = "evenrow" if index % 2 == 0 else "oddrow"
+                        tv.item(row, tags=(tag,))
+                
+                    # Define colors for tags
+                    tv.tag_configure("evenrow", background=self.banded_row[0])
+                    tv.tag_configure("oddrow", background=self.banded_row[1]) 
+                            
+                    
                 # Determine the index of the selected month
                 month, year = month_name[0], month_name[1]
             
@@ -1049,69 +1091,52 @@ class FinanceTracker(tk.Tk):
                 else:
                     text = text + " Spending"
                 top.title(f"{text} Breakdown")
+                
+                columns =  ["Category", 
+                            "Total Spent", 
+                            "Number of\nTransactions", 
+                            "Largest\nTransaction",
+                            "Smallest\nTransaction", 
+                            "Category\nPercentage (%)"]
             
                 # Create a Treeview for displaying breakdown data
-                category_tree = ttk.Treeview(top, columns=["Category", 
-                                                           "Total Spent", 
-                                                           "Number of\nTransactions", 
-                                                           "Average\nTransaction", 
-                                                           "Median\nTransaction", 
-                                                           "Largest\nTransaction",
-                                                           "Smallest\nTransaction", 
-                                                           "Category\nPercentage (%)"], 
-                        show="headings", selectmode="none", height=5)
+                category_tree = ttk.Treeview(top, columns=columns, show="headings", selectmode="none", height=5)
                 
                 # Apply standard formatting for table
                 style = ttk.Style()
                 self.goodLookingTables(style)
-                style.configure("Treeview.Heading", padding=(5,25), anchor='center', justify='center')
-                style.layout("Treeview.Heading", [
-                                                    ("Treeheading.cell", {"sticky": "nswe"}),  # Stretches the header cell
-                                                    ("Treeheading.border", {"sticky": "nswe"}),  # Ensures full stretch
-                                                    ("Treeheading.padding", {"sticky": "nswe"}),  # Applies padding in all directions
-                                                    ("Treeheading.label", {"sticky": "nswe"})  # Ensures text is centered in the label
-                                                ])
             
                 # Column settings
-                column_widths = {"Category": 180, 
-                                 "Total Spent": 140, 
-                                 "Number of Transactions": 140, 
-                                 "Average Transaction": 140, 
-                                 "Median Transaction": 140, 
-                                 "Largest Transaction": 140, 
-                                 "Smallest Transaction": 140,
-                                 "Category \nPercentage (%)": 140}
+                small_width, large_width = 140, 180
+                column_widths = {}
+                for col in columns:
+                    if col == "Category":
+                        column_widths[col] = large_width
+                    else:
+                        column_widths[col] = small_width
 
                 # get minimum size of window
                 window_width = sum(column_widths.values()) + 20
                             
                 for col in category_tree["columns"]:
-                    category_tree.heading(col, text=col, anchor="center")
-                    width = column_widths.get(col, 150)
+                    category_tree.heading(col, text=col, anchor="center", command=lambda c=col: treeviewSortColumn(category_tree, c, False))
+                    width = column_widths.get(col, small_width)
                     category_tree.column(col, width=width, anchor=tk.E if col != "Category" else tk.W, stretch=tk.NO)
             
                 # Compute min/max/transaction counts
-                if df_type == "INCOME":
+                if df_type == "inc":
                     totals = computeMonthlyStats(self.income_data.copy())
                 else:
                     totals = computeMonthlyStats(self.expenses_data.copy())
-                
-                # Iterate over categories and compute values
-                count = 0
-                
-                tag = 'oddrow'
-                
+                    
+                # Total value for month
                 total_overall = totals['Amount'].sum()
                 
-                #TODO sort when header is clicked
                 #TODO add total at bottom of table
                 #TODO add piechart at bottom of window
                 #TODO add table next to piechart that shows all transaction for a clicked on category
 
                 for category in categories:
-                    
-                    # Alternating row colors for readability
-                    tag = "oddrow" if tag == "evenrow" else "evenrow"
                     
                     category_data  = totals[totals['Category'] == category]
                     
@@ -1120,16 +1145,12 @@ class FinanceTracker(tk.Tk):
                     
                     if total == 0.00:
                         num_transactions = 0
-                        average_transaction = 0
-                        median_transaction = 0
                         largest_transaction = 0
                         smallest_transaction = 0
                         category_percentage = 0
                         
                     else:
                         num_transactions = category_data.shape[0]
-                        average_transaction = category_data['Amount'].mean()
-                        median_transaction = category_data['Amount'].median()
                         largest_transaction = category_data['Amount'].max()
                         smallest_transaction = category_data['Amount'].min()
                         category_percentage = (total / total_overall) * 100 if total_overall != 0 else 0  # Avoid division by zero
@@ -1140,21 +1161,21 @@ class FinanceTracker(tk.Tk):
                                 values=[category, 
                                         f"${total/100.:,.2f}", 
                                         f"{num_transactions}", 
-                                        f"${average_transaction/100.:,.2f}", 
-                                        f"${median_transaction/100.:,.2f}", 
                                         f"${largest_transaction/100.:,.2f}",
                                         f"${smallest_transaction/100.:,.2f}",
-                                        f"{category_percentage:.1f}%"], 
-                                tags=(tag,))
+                                        f"{category_percentage:.1f}%"])
                     
-                    count += 1
-            
-                    # Apply row styles
-                    category_tree.tag_configure("oddrow",    background=self.banded_row[0])
-                    category_tree.tag_configure("evenrow",   background=self.banded_row[1])
-                    
+                applyBandedRows(category_tree)
        
                 """Plot the data for a selected account"""
+                #chart_frame = tk.Frame(self)
+                #chart_frame.pack()
+                
+                # Create Matplotlib Figure
+                #fig, ax = plt.subplots(figsize=(5, 3))
+                #canvas = FigureCanvasTkAgg(fig, master=chart_frame)
+                #canvas.get_tk_widget().pack()
+
                 
                 # Grid placement of widgets
                 category_tree.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
@@ -1207,8 +1228,7 @@ class FinanceTracker(tk.Tk):
                 category_tree.bind("<Escape>", exitWindow)
                 
                 category_tree.focus_set()
-               
-                return                
+                               
                 return
             
             def populateBalanceTree(date_tree, summary_df, months_list, categories):
@@ -1376,7 +1396,11 @@ class FinanceTracker(tk.Tk):
             # Clear the main frame before displaying the table
             self.clearMainFrame()
             
-            df_label = ttk.Label(self.main_frame, text=df_type, font=(self.font_type, self.font_size+2, "bold"))
+            if df_type == 'inc':
+                text = "SAVINGS"
+            else:
+                text = "EXPENSES"
+            df_label = ttk.Label(self.main_frame, text=text, font=(self.font_type, self.font_size+2, "bold"))
             df_label.pack(expand=False, fill=tk.NONE, padx=10, pady=(5, 2), anchor="center")
         
             # Create a parent frame for both tables
@@ -1452,25 +1476,23 @@ class FinanceTracker(tk.Tk):
             return
     
         # Get respective dataframe
-        if type_of_data == 'inc':
+        if df_type == 'inc':
             if self.current_window == 'Spending':
                 return
             df = self.income_data.copy()
-            df_type = 'INCOME'
             self.current_window = 'Spending'
             
         else:
             if self.current_window == 'Savings':
                 return
             df = self.expenses_data.copy()
-            df_type = 'EXPENSES'
             self.current_window = 'Savings'
             
         # Clear the main frame before populating the table
         self.clearMainFrame()
             
         # Get list of categories
-        cat_list, _ = self.getCategoryTypes(type_of_data)
+        cat_list, _ = self.getCategoryTypes(df_type)
         
         # Get list of months
         self.all_months = self.generateMonthYearList(self.new_date_range[0], self.new_date_range[1])
@@ -1484,25 +1506,25 @@ class FinanceTracker(tk.Tk):
        """
         Displays the Spending Breakdown section.
 
-        This method calls `showStatistics` with `type_of_data='exp'` 
+        This method calls `showStatistics` with `df_type='exp'` 
         to present an analysis of expenses.
         
         Parameters:
         event (tkinter event, optional): Event trigger (default is None).
         """
-       self.showStatistics(type_of_data='exp')
+       self.showStatistics(df_type='exp')
        
     def showSavings(self, event=None) -> None:
        """
         Displays the Savings Breakdown section.
 
-        This method calls `showStatistics` with `type_of_data='inc'` 
+        This method calls `showStatistics` with `df_type='inc'` 
         to present an analysis of income.
         
         Parameters:
         event (tkinter event, optional): Event trigger (default is None).
         """
-       self.showStatistics(type_of_data='inc')
+       self.showStatistics(df_type='inc')
     
     def showInvestments(self, event=None) -> None:
         """Show Investments section."""
@@ -1722,6 +1744,7 @@ class FinanceTracker(tk.Tk):
         
                 # Drop 'Balance' column
                 df = df.drop(columns=['Balance'], errors='ignore')
+                df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
         
                 # Convert money format to float
                 df['Amount'] = df['Amount'].replace({'\$': '', ',': '', '\(': '-', '\)': ''}, regex=True).astype(float)
