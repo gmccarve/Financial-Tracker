@@ -109,7 +109,7 @@ class FinanceTracker(tk.Tk):
         self.selectFilesAndFolders(reload=True)
         self.showMainFrame(start_fresh=False)
         
-        self.showSpending()
+        #self.showSpending()
         #self.destroy()
         
         return
@@ -1964,47 +1964,47 @@ class FinanceTracker(tk.Tk):
             
         return        
     
+    def getDataFrameIndex(self, df):
+        """Add/correct index column of dataframe"""
+        if 'Index' not in df:
+            df.insert(0, 'Index', df.index)
+        else:
+            df = df.drop('Index', axis=1)
+            df.insert(0, 'Index', df.index)
+        return df
+    
+    def convertToDatetime(self, df):
+        """Convert date formate in dataframes."""
+        df['Date'] = pd.to_datetime(df['Date'], dayfirst=False, format='mixed').dt.date
+        return df
+    
+    def sortDataFrame(self, df):
+        """Sort Dataframe by given set of columns"""
+        df = df.sort_values(by=['Date', 'Amount', 'Account', 'Category'], ascending=True, inplace=False).reset_index(drop=True) 
+        return df
+    
+    def getStartEndDates(self, df):
+        """Calculate the earliest and latest dates of the income and expenses dataframe"""  
+        return df['Date'].min(), df['Date'].max()
+    
+    def removeEmptyAmounts(self, df):
+        """Remove all rows with 0.00 in the amounts column"""
+        return df[df['Amount'] != 0].reset_index(drop=True)
+    
+    def getMinMaxVals(self, df):
+        """Calculate the minimum and maximum values of a dataframe"""
+        return df['Amount'].min(), df['Amount'].max()
+    
+    def findMismatchedCategories(self, df, df_type):
+        """Add an asterisk to categories not found in the categories list"""
+        cat_list, _ = self.getCategoryTypes(df_type)
+        df['Category'] = df['Category'].astype(str).apply(lambda x: f"*{x}" if x.strip() not in map(str.strip, map(str, cat_list)) else x)
+        return df
+    
     def setupDataFrames(self):
         """Format the expenses and income dataframes and also setup initial variables/lists"""
         
         #TODO Docstrings
-        
-        def getDataFrameIndex(df):
-            """Add/correct index column of dataframe"""
-            if 'Index' not in df:
-                df.insert(0, 'Index', df.index)
-            else:
-                df = df.drop('Index', axis=1)
-                df.insert(0, 'Index', df.index)
-            return df
-        
-        def convertToDatetime(df):
-            """Convert date formate in dataframes."""
-            df['Date'] = pd.to_datetime(df['Date'], dayfirst=False, format='mixed').dt.date
-            return df
-        
-        def sortDataFrame(df):
-            """Sort Dataframe by given set of columns"""
-            df = df.sort_values(by=['Date', 'Amount', 'Account', 'Category'], ascending=True, inplace=False).reset_index(drop=True) 
-            return df
-        
-        def getStartEndDates(df):
-            """Calculate the earliest and latest dates of the income and expenses dataframe"""  
-            return df['Date'].min(), df['Date'].max()
-        
-        def removeEmptyAmounts(df):
-            """Remove all rows with 0.00 in the amounts column"""
-            return df[df['Amount'] != 0].reset_index(drop=True)
-        
-        def getMinMaxVals(df):
-            """Calculate the minimum and maximum values of a dataframe"""
-            return df['Amount'].min(), df['Amount'].max()
-        
-        def findMismatchedCategories(df, df_type):
-            """Add an asterisk to categories not found in the categories list"""
-            cat_list, _ = self.getCategoryTypes(df_type)
-            df['Category'] = df['Category'].astype(str).apply(lambda x: f"*{x}" if x.strip() not in map(str.strip, map(str, cat_list)) else x)
-            return df
         
         # Check if either of the dataframes are empty for error handling later
         exp_empty, inc_empty = False, False
@@ -2015,20 +2015,20 @@ class FinanceTracker(tk.Tk):
             inc_empty = True
         
         # Format dataframe 'Date' columns 
-        self.income_data    = convertToDatetime(self.income_data)
-        self.expenses_data  = convertToDatetime(self.expenses_data) 
+        self.income_data    = self.convertToDatetime(self.income_data)
+        self.expenses_data  = self.convertToDatetime(self.expenses_data) 
  
         # Sort dateframes
-        self.income_data    = sortDataFrame(self.income_data)
-        self.expenses_data  = sortDataFrame(self.expenses_data)
+        self.income_data    = self.sortDataFrame(self.income_data)
+        self.expenses_data  = self.sortDataFrame(self.expenses_data)
         
         # Format dataframe 'Index' columns
-        self.income_data    = getDataFrameIndex(self.income_data)
-        self.expenses_data  = getDataFrameIndex(self.expenses_data)
+        self.income_data    = self.getDataFrameIndex(self.income_data)
+        self.expenses_data  = self.getDataFrameIndex(self.expenses_data)
         
         # Calculate earliest and latest date of dataframes for table display
-        income_start_date, income_end_date      = getStartEndDates(self.income_data)
-        expenses_start_date, expenses_end_date  = getStartEndDates(self.expenses_data)
+        income_start_date, income_end_date      = self.getStartEndDates(self.income_data)
+        expenses_start_date, expenses_end_date  = self.getStartEndDates(self.expenses_data)
         
         if exp_empty:
             self.date_range[0] = income_start_date
@@ -2043,12 +2043,12 @@ class FinanceTracker(tk.Tk):
         self.new_date_range = self.date_range.copy() 
         
         # Remove entries with 0.00 in amount column
-        self.income_data    = removeEmptyAmounts(self.income_data)
-        self.expenses_data  = removeEmptyAmounts(self.expenses_data)
+        self.income_data    = self.removeEmptyAmounts(self.income_data)
+        self.expenses_data  = self.removeEmptyAmounts(self.expenses_data)
         
         # Calculate minimum and maximum amounts for dataframes for table display
-        income_min, income_max      = getMinMaxVals(self.income_data)
-        expenses_min, expenses_max  = getMinMaxVals(self.expenses_data)
+        income_min, income_max      = self.getMinMaxVals(self.income_data)
+        expenses_min, expenses_max  = self.getMinMaxVals(self.expenses_data)
         
         self.amount_range[0][0] = income_min / 100.
         self.amount_range[0][1] = income_max / 100.
@@ -2076,8 +2076,8 @@ class FinanceTracker(tk.Tk):
         self.expenses_data["Category"]  = self.expenses_data["Category"].replace(["", None, np.nan], "Not Assigned")
         
         # Find category values that dont' match the category lists
-        self.income_data    = findMismatchedCategories(self.income_data, df_type='inc')
-        self.expenses_data  = findMismatchedCategories(self.expenses_data, df_type='exp')
+        self.income_data    = self.findMismatchedCategories(self.income_data, df_type='inc')
+        self.expenses_data  = self.findMismatchedCategories(self.expenses_data, df_type='exp')
         
         # Generate the dataframe of starting balances
         for account in self.accounts:
@@ -2500,7 +2500,7 @@ class FinanceTracker(tk.Tk):
         # Set up both trees for size updating
         self.expenses_data_tree = None
         self.income_data_tree = None
-        
+
         # Populate the expenses tree/table
         expenses_label = ttk.Label(self.main_frame, text="EXPENSES", font=(self.font_type, self.font_size+2, "bold"))
         expenses_label.grid(row=0, column=0, sticky="n", pady=2)
@@ -2555,6 +2555,8 @@ class FinanceTracker(tk.Tk):
         inc_data_copy = self.income_data.copy()
         exp_data_copy = self.expenses_data.copy()
         
+        print (inc_data_copy)
+        
         # Apply filtering based on defined ranges
         for r, ranges in enumerate([False, self.new_date_range, False, self.new_amount_range]):
             if ranges:
@@ -2580,7 +2582,7 @@ class FinanceTracker(tk.Tk):
                     # Filter by categories (income and expense separately)
                    inc_data_copy = inc_data_copy[inc_data_copy[col].isin(values[0])]
                    exp_data_copy = exp_data_copy[exp_data_copy[col].isin(values[1])]
-           
+                   
         # Reset index after filtering
         inc_data_copy = inc_data_copy.reset_index(drop=True) 
         exp_data_copy = exp_data_copy.reset_index(drop=True) 
@@ -3057,51 +3059,189 @@ class FinanceTracker(tk.Tk):
             self.current_window = ''
             self.redisplayDataFrameTable()  # Refresh display
         
+        def deleteDFItem(index, df_name, parent):
+            """
+            The function:
+                -Deletes a row from a DataFrame based on index
+                -Reindexes the DataFrame
+                -Ensures the 'index' column is the first column
+                -Re-displays dataframe
+         
+            Parameters:.
+            df_index (int): The index of the row to delete.
+            df_name (str): The name of the dataframe to modify
+         
+            Returns:
+            None
+            """
+            
+            if df_name == 'inc':
+                df = parent.income_data
+            else:
+                df = parent.expenses_data
+                
+            df = df.drop(index=index, errors="ignore")  # Avoids errors if index is not found
+
+            # Reset index and create a new 'index' column
+            df = df.drop(columns=["Index"])
+            df = df.reset_index(drop=True)
+            df.insert(0, "Index", df.index)  # Ensure 'index' is the first column
+            
+            if df_name == 'inc':
+                parent.income_data = df
+            else:
+                parent.expenses_data = df
+
+            parent.current_window = ''
+            parent.redisplayDataFrameTable()  # Refresh display
+                
+        def modifyDFItem(index, df_name, parent):
+            """
+            Opens a new Tkinter window allowing modification of a row in a DataFrame.
+        
+            Parameters:
+            - index (int): The index of the row to modify.
+            - df_name (str): The name of the dataframe ('inc' for income, 'exp' for expenses).
+            - parent (tk.Tk): Reference to the main application window.
+        
+            Returns:
+            None
+            """
+            
+            if df_name == 'inc':
+                df = parent.income_data
+            else:
+                df = parent.expenses_data
+                
+            # Ensure index exists
+            if index not in df.index:
+                messagebox.showwarning("Warning", f"Index {index} not found.")
+                return  
+            
+            # Create a new window
+            edit_window = tk.Toplevel(parent)
+            edit_window.title("Modify DataFrame Item")
+            edit_window.geometry("300x300")
+        
+            # Retrieve row values
+            row_data = df.loc[index]
+        
+            # Dictionary to store entry widgets
+            entry_widgets = {}
+        
+            # Create labels and entry fields
+            for i, (col_name, value) in enumerate(row_data.items()):
+                tk.Label(edit_window, text=col_name, font=(parent.font_type, parent.font_size, "bold"), anchor="w").grid(row=i, column=0, padx=10, pady=5, sticky="w")
+                
+                # Create entry fields for editing
+                entry = tk.Entry(edit_window)
+                entry.insert(0, str(value))
+                entry.grid(row=i, column=1, padx=10, pady=5)
+                
+                # Store reference to entry widget
+                entry_widgets[col_name] = entry
+        
+            # Save Button Function
+            def saveChanges():
+                """Saves modifications to the DataFrame with proper type casting and refreshes the table."""
+                
+                for col_name, entry in entry_widgets.items():
+                    value = entry.get()  # Get user input as a string
+                    
+                    # Ensure the correct type before updating
+                    if col_name == "Index":  # First column: Integer
+                        value = int(value) if value.isdigit() else df[col_name].dtype.type(df[col_name].iloc[0])
+                    elif col_name == "Date":  # Second column: DateTime
+                        try:
+                            value = pd.to_datetime(value).date()
+                        except ValueError:
+                            value = df[col_name].dtype.type(df[col_name].iloc[0])  # Default to existing dtype if invalid
+                    elif col_name in ["Amount"]:  # Fourth column: Integer
+                        value = int(value) if value.isdigit() else df[col_name].dtype.type(df[col_name].iloc[0])
+                    elif col_name in ["Category", "Description", "Account"]:  # String Columns
+                        value = str(value)
+            
+                    df.at[index, col_name] = value  # Update DataFrame with correctly cast value
+                    
+                parent.convertToDatetime(df)
+            
+                # Refresh DataFrame in the main app
+                if df_name == 'inc':
+                    parent.income_data = df
+                else:
+                    parent.expenses_data = df
+            
+                self.current_window  = ''
+                parent.redisplayDataFrameTable()  # Refresh displayed table
+                edit_window.destroy()  # Close the edit window
+        
+            # Save Button
+            save_button = tk.Button(edit_window, text="Save", command=saveChanges)
+            save_button.grid(row=len(row_data), column=0, columnspan=2, pady=10)
+        
+            edit_window.mainloop()
+            
+            return
+                
+        
         col_id = table.identify_column(event.x)
         col_name = table.heading(col_id, "text")
         
         menu = tk.Menu(self, tearoff=0)
         
-        if col_name != 'Index':
-            menu.add_command(label=f"Sort {col_name} Ascending", command=lambda: self.sortIncExpTable(table, col_name, df, True))
-            menu.add_command(label=f"Sort {col_name} Descending", command=lambda: self.sortIncExpTable(table, col_name, df, False))
-        
-        if col_name == 'Index':
-            """Sort and high index column"""
-            if not self.hide_index:
-                menu.add_command(label="Hide Index Column", command=lambda: hideIndexColumn()) 
-        
-        if col_name == 'Date':
-            """Calendar of date window initially starting and ending where the date is"""
-            menu.add_separator()
-            menu.add_command(label="Choose date window", command=lambda: showCalendar(df.copy))
-            menu.add_separator()
-            menu.add_command(label="Show last 30 days", command=lambda: showLastMonth(delta=30))
-            menu.add_command(label="Show last 60 days", command=lambda: showLastMonth(delta=60))
-            menu.add_command(label="Show last 90 days", command=lambda: showLastMonth(delta=90))
-            menu.add_command(label="Show last 180 days", command=lambda: showLastMonth(delta=180))
-            menu.add_command(label="Show last 365 days", command=lambda: showLastMonth(delta=365))
-            menu.add_separator()
-            if self.hide_index:
-                menu.add_command(label="Show Index Column", command=lambda: hideIndexColumn()) 
+        # Get the clicked column
+        region = table.identify("region", event.x, event.y)
+
+        # Activate only if the click is on the column header
+        if region == "cell":
+            item_id = table.identify_row(event.y)
+            row_values = table.item(item_id, "values")
+            df_index = int(row_values[0])
+            menu.add_command(label="Delete Transaction", command=lambda: deleteDFItem(df_index, df_name, self))
+            menu.add_command(label="Modify Transaction", command=lambda: modifyDFItem(df_index, df_name, self))
             
-        elif col_name == 'Description':
-            self
-        elif col_name == 'Amount':
-            """Cutoff window slider"""
-            menu.add_separator()
-            menu.add_command(label="Choose Amount window", command=lambda: showAmountFilter(df.copy, df_name))
-        elif col_name == 'Account':
-            """Dropdown menu to only show certain values"""
-            menu.add_separator()
-            menu.add_command(label="Choose Accounts", command=lambda: showTextFilter(df.copy, type_of_filter='acc', df_name=df_name))
-            self
-        elif col_name == 'Category':
-            menu.add_separator()
-            menu.add_command(label="Choose Categories", command=lambda: showTextFilter(df.copy, type_of_filter='cat', df_name=df_name))
-            menu.add_command(label="Add New Categories", command=lambda: addCategoryToFile(df_name=df_name))
-            """Dropdown menu to only show certain values"""
-            self
+        
+        else:
+            if col_name != 'Index':
+                menu.add_command(label=f"Sort {col_name} Ascending", command=lambda: self.sortIncExpTable(table, col_name, df, True))
+                menu.add_command(label=f"Sort {col_name} Descending", command=lambda: self.sortIncExpTable(table, col_name, df, False))
+            
+            if col_name == 'Index':
+                """Sort and high index column"""
+                if not self.hide_index:
+                    menu.add_command(label="Hide Index Column", command=lambda: hideIndexColumn()) 
+            
+            if col_name == 'Date':
+                """Calendar of date window initially starting and ending where the date is"""
+                menu.add_separator()
+                menu.add_command(label="Choose date window", command=lambda: showCalendar(df.copy))
+                menu.add_separator()
+                menu.add_command(label="Show last 30 days", command=lambda: showLastMonth(delta=30))
+                menu.add_command(label="Show last 60 days", command=lambda: showLastMonth(delta=60))
+                menu.add_command(label="Show last 90 days", command=lambda: showLastMonth(delta=90))
+                menu.add_command(label="Show last 180 days", command=lambda: showLastMonth(delta=180))
+                menu.add_command(label="Show last 365 days", command=lambda: showLastMonth(delta=365))
+                menu.add_separator()
+                if self.hide_index:
+                    menu.add_command(label="Show Index Column", command=lambda: hideIndexColumn()) 
+                
+            elif col_name == 'Description':
+                self
+            elif col_name == 'Amount':
+                """Cutoff window slider"""
+                menu.add_separator()
+                menu.add_command(label="Choose Amount window", command=lambda: showAmountFilter(df.copy, df_name))
+            elif col_name == 'Account':
+                """Dropdown menu to only show certain values"""
+                menu.add_separator()
+                menu.add_command(label="Choose Accounts", command=lambda: showTextFilter(df.copy, type_of_filter='acc', df_name=df_name))
+                self
+            elif col_name == 'Category':
+                menu.add_separator()
+                menu.add_command(label="Choose Categories", command=lambda: showTextFilter(df.copy, type_of_filter='cat', df_name=df_name))
+                menu.add_command(label="Add New Categories", command=lambda: addCategoryToFile(df_name=df_name))
+                """Dropdown menu to only show certain values"""
+                self
             
         menu.post(event.x_root, event.y_root)
 
