@@ -17,209 +17,13 @@ from datetime import datetime, timedelta
 
 from typing import List, Tuple, Union
 
+from Utility import Utility, SaveFiles, Windows, Tables
+from DataFrameProcessor import DataFrameProcessor
+#from Windows import Windows
+
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
 pd.set_option('display.float_format','{:.2f}'.format)
-
-class Windows:
-    @staticmethod
-    def openRelativeWindow(new_window, main_width: int, main_height: int, width: int, height: int) -> None:
-        """
-        Positions the new window relative to the main application window.
-    
-        This ensures that the new window appears slightly offset from the main window.
-    
-        Parameters:
-            new_window: The new Tkinter window to be positioned.
-            main_width  (int): The current width of new_window
-            main_height (int): The current height of new_window
-            width       (int): The width of the new window.
-            height      (int): The height of the new window.
-    
-        Returns:
-            None
-        """    
-        # Position new window slightly offset from the main window
-        new_x = main_width  + 50
-        new_y = main_height + 50
-    
-        new_window.geometry(f"{width}x{height}+{new_x}+{new_y}")  # Format: "WIDTHxHEIGHT+X+Y"
-
-class Utility:
-    @staticmethod
-    def getCategoryTypes(name: str) -> Tuple[List[str], str]:
-        """
-        Retrieves category types from the appropriate file.
-    
-        Parameters:
-            name (str): If 'inc', loads income categories; otherwise, loads spending categories.
-    
-        Returns:
-            Tuple[List[str], str]: A sorted list of category names and the full path to the category file.
-        """
-        file_name = "IncomeCategories.txt" if name == 'inc' else "SpendingCategories.txt"
-        cat_file = os.path.join(os.path.dirname(__file__), file_name)
-        
-        with open(cat_file) as ff:
-            categories = [cat.strip() for cat in ff.readlines()]  # Strip newline characters
-
-        return sorted(categories), cat_file
-    
-    def generateMonthYearList(start_date: datetime, end_date: datetime) -> List[Tuple[int, int]]:
-        """
-        Generates a list of (month, year) tuples between two datetime objects.
-    
-        Parameters:
-            start_date: The starting datetime object.
-            end_date: The ending datetime object.
-            
-        Returns:
-            List of tuples in the format (month, year).
-        """
-        current_date = datetime(start_date.year, start_date.month, 1)
-        end_date = datetime(end_date.year, end_date.month, 1)
-        
-        month_year_list = []
-    
-        while current_date <= end_date:
-            month_year_list.append((current_date.month, current_date.year))
-            
-            # Move to the next month
-            next_month = current_date.month + 1
-            next_year = current_date.year + (1 if next_month > 12 else 0)
-            current_date = datetime(next_year, 1 if next_month > 12 else next_month, 1)
-
-        return month_year_list
-    
-    def formatMonthYear(month: int, year: int) -> datetime:
-        """
-        Convert a month and year into the format 'MM 'YY'.
-        
-        Parameters:
-            month (int): The month
-            year (int): The year
-            
-        Returns:
-            A (str) in the format "Mon 'YY"
-        """
-        return datetime(year, month, 1).strftime("%b '%y")
-    
-    def formatMonthLastDayYear(month: int, year: int) -> datetime:
-        """
-        Convert a month and year into the format 'Mon 'YY'.
-        
-        Parameters:
-            month (int): The month
-            year (int): The year
-            
-        Returns:
-            The last day of a month given as a string in the format "MM DD 'YY"
-        """
-        last_day = (datetime(year, month + 1, 1) - timedelta(days=1)).day
-        return datetime(year, month, last_day).strftime("%b %d, '%y")
-
-class DataFrameProcessor:
-    @staticmethod
-    def getDataFrameIndex(df: pd.DataFrame) -> pd.DataFrame:
-        """
-       Ensures that the 'Index' column exists and is correctly set as the first column.
-
-       If the 'Index' column does not exist, it is created from the DataFrame's index.
-       If it already exists, it is removed and reinserted as the first column.
-
-       Parameters:
-       - df (pd.DataFrame): The input DataFrame.
-
-       Returns:
-       - pd.DataFrame: Updated DataFrame with 'Index' as the first column.
-       """
-        if 'Index' not in df:
-            df.insert(0, 'Index', df.index)
-        else:
-            df = df.drop('Index', axis=1)
-            df.insert(0, 'Index', df.index)
-        return df
-    
-    def convertToDatetime(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Converts the 'Date' column in a DataFrame to datetime format, ensuring proper formatting.
-
-        Parameters:
-        - df (pd.DataFrame): The input DataFrame containing a 'Date' column.
-
-        Returns:
-        - pd.DataFrame: Updated DataFrame with the 'Date' column converted to datetime format.
-        """
-        df['Date'] = pd.to_datetime(df['Date'], dayfirst=False, format='mixed').dt.date
-        return df
-    
-    def sortDataFrame(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Sorts a DataFrame based on 'Date', 'Amount', 'Account', and 'Category' columns.
-
-        Sorting is done in ascending order for all specified columns.
-
-        Parameters:
-        - df (pd.DataFrame): The input DataFrame.
-
-        Returns:
-        - pd.DataFrame: Sorted DataFrame with a reset index.
-        """
-        df = df.sort_values(by=['Date', 'Amount', 'Account', 'Category'], ascending=True, inplace=False).reset_index(drop=True) 
-        return df
-    
-    def getStartEndDates(df: pd.DataFrame) -> Tuple[pd.Timestamp, pd.Timestamp]:
-        """
-        Retrieves the earliest and latest dates from the 'Date' column of the DataFrame.
-
-        Parameters:
-        - df (pd.DataFrame): The input DataFrame containing a 'Date' column.
-
-        Returns:
-        - Tuple[pd.Timestamp, pd.Timestamp]: A tuple containing the earliest and latest dates.
-        """
-        return df['Date'].min(), df['Date'].max()
-    
-    def removeEmptyAmounts(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Removes rows where the 'Amount' column is 0.00.
-
-        Parameters:
-        - df (pd.DataFrame): The input DataFrame containing an 'Amount' column.
-
-        Returns:
-        - pd.DataFrame: Cleaned DataFrame with non-zero 'Amount' values and reset index.
-        """
-        return df[df['Amount'] != 0].reset_index(drop=True)
-    
-    def getMinMaxVals(df: pd.DataFrame) -> Tuple[float, float]:
-        """
-        Computes the minimum and maximum values of the 'Amount' column in the DataFrame.
-
-        Parameters:
-        - df (pd.DataFrame): The input DataFrame containing an 'Amount' column.
-
-        Returns:
-        - Tuple[float, float]: A tuple containing (min_value, max_value) from the 'Amount' column.
-        """
-        return df['Amount'].min(), df['Amount'].max()
-    
-    def findMismatchedCategories( df: pd.DataFrame, df_type: str) -> pd.DataFrame:
-        """
-        Identifies and marks categories that are not found in the predefined category list.
-
-        Categories that are not in the list will be prefixed with an asterisk (*).
-
-        Parameters:
-        - df (pd.DataFrame): The input DataFrame containing a 'Category' column.
-        - df_type (str): The type of DataFrame ('inc' for income, 'exp' for expenses).
-
-        Returns:
-        - pd.DataFrame: Updated DataFrame with mismatched categories marked with an asterisk (*).
-        """
-        cat_list, _ = Utility.getCategoryTypes(df_type)
-        df['Category'] = df['Category'].astype(str).apply(lambda x: f"*{x}" if x.strip() not in map(str.strip, map(str, cat_list)) else x)
-        return df
 
 class FinanceTracker(tk.Tk):
     def __init__(self):
@@ -310,7 +114,7 @@ class FinanceTracker(tk.Tk):
         self.selectFilesAndFolders(reload=True)
         self.showMainFrame(start_fresh=False)
         
-        self.showSpending()
+        #self.showSpending()
         #self.destroy()
         
         return
@@ -371,31 +175,11 @@ class FinanceTracker(tk.Tk):
         #        self.saveState()
         self.destroy()
         
-    def goodLookingTables(self, style: ttk.Style) -> None:
-        """
-        Applies a consistent style to Treeview tables.
-    
-        Parameters:
-            style: The ttk.Style object used for configuring table appearance.
-        """
-        style.configure("Treeview", rowheight=25, font=(self.font_type, self.font_size))  # Set row height and font
-        style.configure("Treeview.Heading", font=(self.font_type, self.font_size + 1, "bold"))  # Bold headers
-        style.configure("Treeview.Heading", padding=(5,25), anchor='center', justify='center')
-        style.layout("Treeview.Heading", [
-                                            ("Treeheading.cell", {"sticky": "nswe"}),  # Stretches the header cell
-                                            ("Treeheading.border", {"sticky": "nswe"}),  # Ensures full stretch
-                                            ("Treeheading.padding", {"sticky": "nswe"}),  # Applies padding in all directions
-                                            ("Treeheading.label", {"sticky": "nswe"})  # Ensures text is centered in the label
-                                        ])
-
-    def clearTreeview(self, tree: ttk.Treeview) -> None:
-        """
-        Clears all items from a Treeview widget.
-    
-        Parameters:
-            tree: The ttk.Treeview widget to be cleared.
-        """
-        tree.delete(*tree.get_children())
+    def saveState(self):
+        SaveFiles.saveState(self.last_saved_file, self.income_data, self.expenses_data, self.starting_data)
+        
+    def saveStateAs(self):
+        SaveFiles.saveStateAs(self.income_data, self.expenses_data, self.starting_data)
     
     def showMonthlyBreakdown(self, event=None):
         """Show Accounts section."""
@@ -515,7 +299,7 @@ class FinanceTracker(tk.Tk):
             
             # Apply standard formatting for table
             style = ttk.Style()
-            self.goodLookingTables(style)
+            Tables.tableStyle(style)
         
             # Column settings
             column_widths = {"Account": 180, 
@@ -940,7 +724,7 @@ class FinanceTracker(tk.Tk):
                 
                 # Apply standard formatting for table
                 style = ttk.Style()
-                self.goodLookingTables(style)
+                Tables.tableStyle(style)
             
                 # Define column widths dynamically (ensures consistency)
                 default_column_width = 140  # Default width
@@ -955,7 +739,7 @@ class FinanceTracker(tk.Tk):
                     tree.column(col, width=column_widths[col], anchor=tk.E, stretch=tk.NO)
             
                 # Clear previous table content
-                self.clearTreeview(tree)
+                Tables.clearTable(tree)
             
                 # Repopulate the Treeview with formatted data
                 tag = 'oddrow'
@@ -1038,7 +822,6 @@ class FinanceTracker(tk.Tk):
                             populateBalanceTree(balance_tree, account_summary, months_list)  # Refresh the table
                             top.destroy()  # Close window
                         else:
-                            #TODO Change to an error message
                             messagebox.showwarning("Warning", f"Invalid range: Must be between 1 and {len(self.all_months)} months")
                     except ValueError:
                         messagebox.showwarning("Warning", "Invalid input: Enter a number")
@@ -1256,7 +1039,7 @@ class FinanceTracker(tk.Tk):
                 
                 # Apply standard formatting for table
                 style = ttk.Style()
-                self.goodLookingTables(style)
+                Tables.tableStyle(style)
             
                 # Column settings
                 small_width, large_width = 140, 180
@@ -1361,9 +1144,9 @@ class FinanceTracker(tk.Tk):
                     category_totals = totals.groupby("Category")["Amount"].sum()
                     
                     # Exclude specific categories
-                    exclude_categories = ["Credit Card Payment"]
+                    exclude_categories = ["Credit Card Payment", "Work", "Car Payment", "CC Payment"]
                     category_totals = category_totals[~category_totals.index.isin(exclude_categories)]
-                    category_totals = category_totals[~category_totals.index.str.contains("Transfer|Work", case=False, na=False)]
+                    category_totals = category_totals[~category_totals.index.str.contains("Transfer", case=False, na=False)]
 
                     # Sort categories from highest to lowest spending
                     category_totals = category_totals.sort_values(ascending=False)
@@ -1454,8 +1237,6 @@ class FinanceTracker(tk.Tk):
                 
                     if chart_type == "Category Breakdown Pie Chart":
                         plotPieChart()
-                    elif chart_type == "Spending Over Time (Line Chart)":
-                        plotSpendingOverTime()
                     elif chart_type == "Bar Chart: Most Expensive Categories":
                         plotExpensiveCategories()
                     elif chart_type == "Boxplot: Transaction Variability":
@@ -1495,7 +1276,7 @@ class FinanceTracker(tk.Tk):
                 
                 # Apply styling
                 style = ttk.Style()
-                self.goodLookingTables(style)
+                Tables.tableStyle(style)
                 
                 # Configure column headings
                 for col in breakdown_columns:
@@ -1642,7 +1423,7 @@ class FinanceTracker(tk.Tk):
                 
                 # Apply standard formatting for table
                 style = ttk.Style()
-                self.goodLookingTables(style)
+                Tables.tableStyle(style)
             
                 # Define column widths dynamically (ensures consistency)
                 default_column_width = 140  # Default width
@@ -1657,7 +1438,7 @@ class FinanceTracker(tk.Tk):
                     date_tree.column(col, width=column_widths[col], anchor=tk.E, stretch=tk.NO)
             
                 # Clear previous table content
-                self.clearTreeview(date_tree)
+                Tables.clearTable(date_tree)
 
                 # Repopulate the Treeview with formatted data
                 tag = 'oddrow'
@@ -2350,8 +2131,10 @@ class FinanceTracker(tk.Tk):
                     inc, exp, self.starting_data = loadPickleFile(data_file)
                 elif data_file.endswith(".xlsx"):
                     inc, exp, self.starting_data = loadXLSXFile(data_file)
-                else:
-                    inc, exp = loadCSVFile(data_file)
+                elif data_file.endswith(".csv"):
+                    #TODO add in functionality
+                    return
+                    #inc, exp = loadCSVFile(data_file)
                 
                 self.income_data    = pd.concat([self.income_data, inc], ignore_index=False)
                 self.expenses_data  = pd.concat([self.expenses_data, exp], ignore_index=False)
@@ -2465,185 +2248,6 @@ class FinanceTracker(tk.Tk):
         self.current_window = ''
         self.selectFilesAndFolders(reload=True)
     
-    def saveState(self) -> None:
-        """
-        Saves financial data based on the last saved file format.
-    
-        - If the last saved file is a `.pkl`, saves as a Pickle file.
-        - If the last saved file is a `.xlsx`, saves as an Excel file.
-        - If the last saved file is in CSV format (5 lines), saves as CSV.
-        - If no valid file is found, prompts the user.
-        
-        Retuns:
-            None
-        """ 
-        
-        try:
-            with open(self.last_saved_file, 'r') as ff:
-                file_lines = ff.readlines()
-    
-            if len(file_lines) == 1:
-                file_name = file_lines[0].strip()
-                if file_name.endswith(".pkl"):
-                    self.saveToPickleFile(file_name)
-                elif file_name.endswith(".xlsx"):
-                    self.saveToXLSX(file_name)
-            elif len(file_lines) == 5:
-                self.saveToCSV(file_lines)
-            else:
-                messagebox.showinfo("Message", "No data to save")
-        except FileNotFoundError:
-            messagebox.showinfo("Message", "No previously saved file found.")
-        
-    def saveStateAs(self) -> None:
-        """
-        Saves financial data with user-specified file format.
-    
-        Prompts the user to select a save location and file format (`.xlsx`, `.pkl`, `.csv`).
-        
-        Retuns:
-            None
-        """
-        filetypes = [
-            ("Excel Files", "*.xlsx"),
-            ("Pickle Files", "*.pkl"),
-            ("CSV Files", "*.csv"),
-        ]
-        
-        file_name = filedialog.asksaveasfilename(
-            title="Select Files",
-            filetypes=filetypes,
-            defaultextension=".xlsx"
-        )
-    
-        if file_name:
-            self.sendToSaveFile(file_name)
-    
-    def sendToSaveFile(self, file_name: str) -> None:
-        """
-        Saves data to a file, choosing the correct format.
-    
-        Parameters:
-            file_name: The file path where data should be saved.
-        
-        Retuns:
-            None
-        """
-        if file_name.endswith(".pkl"):
-            self.saveToPickleFile(file_name)
-        elif file_name.endswith(".xlsx"):
-            self.saveToXLSX(file_name)
-        elif file_name.endswith(".csv"):
-            self.saveToCSV(file_name)
-    
-    def saveToXLSX(self, file_name: str) -> None:
-        """
-        Saves financial data to an Excel (.xlsx) file.
-    
-        Parameters:
-            file_name: The file path for saving.
-        
-        Retuns:
-            None
-        """
-        data_frames = [self.income_data, self.expenses_data, self.starting_data]
-        sheet_names = ['Income', 'Expenses', 'Starting Balance']
-    
-        try:
-            with pd.ExcelWriter(file_name) as writer:
-                for df, sheet_name in zip(data_frames, sheet_names):
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
-    
-            messagebox.showinfo("File Saved", f"Data successfully saved to \n{file_name}")
-            self.updateLastSavedFile(file_name)
-    
-        except Exception as e:
-            messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}\n\n{str(e)}")
-    
-    def saveToCSV(self, file_name: Union[str, List[str]]) -> None:
-        """
-        Saves financial data to CSV files.
-    
-        If the provided file name is a list (legacy behavior), extracts the directory and base name from the first item.
-    
-        Parameters:
-            file_name: The file path or list of file paths.
-        
-        Returns:
-            None
-        """
-        
-        try:
-            if type(file_name) == str:
-                dir_base = "/".join(file_name.split("/")[:-1])
-                file_base = file_name.split("/")[-1].split(".")[0]
-            else:
-                dir_base = "/".join(file_name[0].split("/")[:-1])
-                file_base = file_name[0].split("/")[-1].split("_")[0]
-            
-            list_dfs = [self.income_data, self.expenses_data, self.starting_data]
-            type_names = ['Income', 'Expenses', 'Starting Balance']
-            file_names = []
-            
-            try:
-                for idx, df in enumerate(list_dfs):
-                    file_path = os.path.join(dir_base, file_base + "_" + type_names[idx] + ".csv")
-                    df.to_csv(file_path, index=False)
-                    file_names.append(file_path)
-                    
-                all_file_names = "\n\n".join(file_names)
-                messagebox.showinfo("Files Saved", f"Data successfully saved to \n\n{all_file_names}")
-                
-                self.updateLastSavedFile(all_file_names)
-                
-            except:
-                messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}")     
-    
-        except Exception as e:
-            messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}\n\n{str(e)}")
-        
-    def saveToPickleFile(self, file_name: str) -> None:
-        """
-        Saves financial data to a Pickle (.pkl) file.
-    
-        Parameters:
-            file_name: The file path for saving.
-        
-        Returns:
-            None
-        """
-        yearly_data = {
-            'Income': self.income_data,
-            'Expenses': self.expenses_data,
-            'Initial': self.starting_data,
-        }
-    
-        try:
-            with open(file_name, "wb") as f:
-                pickle.dump(yearly_data, f)
-    
-            messagebox.showinfo("File Saved", f"Data successfully saved to \n{file_name}")
-            self.updateLastSavedFile(file_name)
-    
-        except Exception as e:
-            messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}\n\n{str(e)}")
-
-    def updateLastSavedFile(self, file_name):
-        """
-        Updates the record of the last saved file.
-    
-        Parameters:
-            file_name: The file path that was last successfully saved.
-        
-        Results:
-            None
-        """
-        try:
-            with open(self.last_saved_file, "w") as f:
-                f.write(file_name)
-        except Exception as e:
-            messagebox.showinfo("Error", f"Could not update last saved file: \n\n{str(e)}")        
-
     def displayIncExpTables(self, inc, exp):
         """Display total expenses and income data.""" 
         
@@ -2671,7 +2275,7 @@ class FinanceTracker(tk.Tk):
             else:
                 self.expenses_data_tree = tree
             
-            self.clearTreeview(tree)
+            Tables.clearTable(tree)
             
             # Create Scrollbars
             y_scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
@@ -2699,11 +2303,11 @@ class FinanceTracker(tk.Tk):
                 column_widths['Index'] = 0
             
             style = ttk.Style()
-            self.goodLookingTables(style)
+            Tables.tableStyle(style)
         
             # Define column headings
             for col in columns:
-                tree.heading(col, text=col, command=lambda c=col: self.sortIncExpTable(tree, c, df, -1))
+                tree.heading(col, text=col, command=lambda c=col: Tables.sortTableByColumn(tree, c, False))
                 width = column_widths.get(col, 120)
                 tree.column(col, anchor=tk.W if col != "Amount" else tk.E, width=width, stretch=tk.NO)
         
@@ -2774,9 +2378,10 @@ class FinanceTracker(tk.Tk):
                         self.income_data.at[df_index, "Category"] = new_category
                     elif df_name == 'exp':
                         self.expenses_data.at[df_index, "Category"] = new_category
-                    
+
                     if self.current_sort == 'Category':
-                        self.sortIncExpTable(tree, 'Category', df, False)
+                        #TODO Figure out some way to change self.current_sort from Tables.sortTableByColumn()
+                        Tables.sortTableByColumn(tree, 'Category', False)
                     
                     popup.destroy()
                     
@@ -2870,7 +2475,7 @@ class FinanceTracker(tk.Tk):
         expenses_label.grid(row=0, column=0, sticky="n", pady=2)
         showTable(exp.copy(), 'exp')
         
-        # Populate teh income tree/table
+        # Populate the income tree/table
         expenses_label = ttk.Label(self.main_frame, text="INCOME", font=(self.font_type, self.font_size+2, "bold"))
         expenses_label.grid(row=2, column=0, sticky="n", pady=2)
         showTable(inc.copy(), 'inc')
@@ -3503,7 +3108,6 @@ class FinanceTracker(tk.Tk):
             
             return
                 
-        
         col_id = table.identify_column(event.x)
         col_name = table.heading(col_id, "text")
         
@@ -3520,11 +3124,10 @@ class FinanceTracker(tk.Tk):
             menu.add_command(label="Delete Transaction", command=lambda: deleteDFItem(df_index, df_name, self))
             menu.add_command(label="Modify Transaction", command=lambda: modifyDFItem(df_index, df_name, self))
             
-        
         else:
             if col_name != 'Index':
-                menu.add_command(label=f"Sort {col_name} Ascending", command=lambda: self.sortIncExpTable(table, col_name, df, True))
-                menu.add_command(label=f"Sort {col_name} Descending", command=lambda: self.sortIncExpTable(table, col_name, df, False))
+                menu.add_command(label=f"Sort {col_name} Ascending", command=lambda: Tables.sortTableByColumn(table, col_name, True))
+                menu.add_command(label=f"Sort {col_name} Descending", command=lambda: Tables.sortTableByColumn(table, col_name, False))
             
             if col_name == 'Index':
                 """Sort and high index column"""
@@ -3564,60 +3167,6 @@ class FinanceTracker(tk.Tk):
                 self
             
         menu.post(event.x_root, event.y_root)
-
-    def sortIncExpTable(self,  table: tk.Widget, column_name: str, df: pd.DataFrame, sort_direction: Union[int, bool]) -> None:
-        """
-        Sorts the income/expense table by a selected column, reversing order on each click.
-    
-        - If the column was previously sorted, clicking again reverses the order.
-        - If sorting for the first time, it determines the initial order based on current data.
-        - Applies sorting based on primary column and fallback order on 'Date', 'Amount', 'Account', 'Category'.
-        - Updates the table display after sorting.
-        - Applies alternating row colors for readability.
-    
-        Parameters:
-            table (tk.Widget): The Treeview table to update after sorting.
-            column_name (str): The column to sort by.
-            df (pd.DataFrame): The DataFrame containing the table data.
-            sort_direction (Union[int, bool]): Sorting order (0 for auto-detect, True for ascending, False for descending).
-    
-        Returns:
-        None
-        """
-        
-        # Determine initial sorting direction if unspecified (-1)
-        if sort_direction == -1:
-            if column_name in self.sort_orders:
-                self.sort_orders[column_name] = not self.sort_orders[column_name]
-            else:
-                self.sort_orders[column_name]  = True
-            sort_direction = not self.sort_orders[column_name]
-            
-        # Prevent redundant sorting
-        elif self.current_sort == column_name:
-            if sort_direction != self.sort_orders.get(column_name, True):
-                return
-        
-        self.sort_orders[column_name] = not sort_direction  # Toggle order for next sort
-        df.sort_values(by=[column_name, 'Date', 'Amount', 'Account', 'Category'], ascending=sort_direction, inplace=True)
-        
-        for item in table.get_children():
-            table.delete(item)
-        
-        # Apply alternating row colors
-        table.tag_configure("oddrow", background=self.banded_row[0])
-        table.tag_configure("evenrow", background=self.banded_row[1])
-        tag = 'oddrow'
-
-        for i, row in df.iterrows():
-            values = list(row)
-            values[3] = f"${values[3]/100:.2f}"  # Format amount as currency
-            tag = "oddrow" if tag == "evenrow" else "evenrow"
-            table.insert('', tk.END, values=values, tags=(tag,))
-            
-        self.current_sort = column_name
-            
-        return
 
 if __name__ == "__main__":
     app = FinanceTracker()
