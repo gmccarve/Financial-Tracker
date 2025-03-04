@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 from tkinter import messagebox, filedialog, ttk
 from typing import List, Tuple, Union
 
+from StyleConfig import StyleConfig
+
 class Utility:
     @staticmethod
     def getCategoryTypes(name: str) -> Tuple[List[str], str]:
@@ -296,11 +298,7 @@ class Windows:
         
 class Tables:
     # Define class-level variables (shared across all instances)
-        
-    font_type = 'calibri'
-    font_size = 12
-    banded_rows = ["#e6f2ff", "#ffffff", '#D3D3D3']
-        
+
     @staticmethod
     def tableStyle(style: ttk.Style) -> None:
         """
@@ -309,8 +307,8 @@ class Tables:
         Parameters:
             style: The ttk.Style object used for configuring table appearance.
         """
-        style.configure("Treeview", rowheight=25, font=(Tables.font_type, Tables.font_size))  # Set row height and font
-        style.configure("Treeview.Heading", font=(Tables.font_type, Tables.font_size + 1, "bold"))  # Bold headers
+        style.configure("Treeview", rowheight=25, font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE))  # Set row height and font
+        style.configure("Treeview.Heading", font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"))  # Bold headers
         style.configure("Treeview.Heading", padding=(5,25), anchor='center', justify='center')
         style.layout("Treeview.Heading", [
                                             ("Treeheading.cell", {"sticky": "nswe"}),  # Stretches the header cell
@@ -357,9 +355,11 @@ class Tables:
         for index, row in enumerate(tv.get_children('')):
             tag = "evenrow" if index % 2 == 0 else "oddrow"
             tv.item(row, tags=(tag,))
+            
+            #TODO TOTAL ROW
     
         # Define colors for tags
-        tv.tag_configure("evenrow", background=Tables.banded_rows[0])
-        tv.tag_configure("oddrow", background=Tables.banded_rows[1]) 
+        tv.tag_configure("evenrow", background=StyleConfig.BANDED_ROWS[0])
+        tv.tag_configure("oddrow", background=StyleConfig.BANDED_ROWS[1]) 
         
         
