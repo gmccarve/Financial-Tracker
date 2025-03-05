@@ -48,7 +48,7 @@ class DataFrameProcessor:
             df = df.drop(columns=['Number'])
         df.insert(0, 'Number', df.index)
         return df
-    
+    @staticmethod 
     def convertCurrency(df: pd.DataFrame) -> pd.DataFrame:
         """
         Converts the 'Payment', 'Deposit', and 'Balance' columns in a DataFrame to cents (int) format
@@ -71,7 +71,7 @@ class DataFrameProcessor:
                 df[col] = (df[col] * 100).round().astype(int)
 
         return df
-    
+    @staticmethod 
     def convertToDatetime(df: pd.DataFrame) -> pd.DataFrame:
         """
         Converts the 'Date' column in a DataFrame to datetime format, ensuring proper formatting.
@@ -84,7 +84,7 @@ class DataFrameProcessor:
         """
         df['Date'] = pd.to_datetime(df['Date'], dayfirst=False, format='mixed').dt.date
         return df
-    
+    @staticmethod 
     def sortDataFrame(df: pd.DataFrame) -> pd.DataFrame:
         """
         Sorts a DataFrame in ascending order based on 'Date' column.
@@ -97,7 +97,7 @@ class DataFrameProcessor:
         """
         df = df.sort_values(by=['Date'], ascending=True, inplace=False).reset_index(drop=True) 
         return df
-    
+    @staticmethod 
     def getStartEndDates(df: pd.DataFrame) -> Tuple[pd.Timestamp, pd.Timestamp]:
         """
         Retrieves the earliest and latest dates from the 'Date' column of the DataFrame.
@@ -109,7 +109,7 @@ class DataFrameProcessor:
         - Tuple[pd.Timestamp, pd.Timestamp]: A tuple containing the earliest and latest dates.
         """
         return df['Date'].min(), df['Date'].max()
-    
+    @staticmethod 
     def getMinMaxVals(df: pd.DataFrame) -> Tuple[float, float]:
         """
         Computes the minimum and maximum values of the 'Amount' column in the DataFrame.
@@ -121,7 +121,7 @@ class DataFrameProcessor:
         - Tuple[float, float]: A tuple containing (min_value, max_value) from the 'Amount' column.
         """
         return df['Amount'].min(), df['Amount'].max()
-    
+    @staticmethod 
     def findMismatchedCategories( df: pd.DataFrame, df_type: str) -> pd.DataFrame:
         """
         Identifies and marks categories that are not found in the predefined category list.
@@ -138,8 +138,39 @@ class DataFrameProcessor:
         cat_list, _ = Utility.getCategoryTypes(df_type)
         df['Category'] = df['Category'].astype(str).apply(lambda x: f"*{x}" if x.strip() not in map(str.strip, map(str, cat_list)) else x)
         return df
+    @staticmethod 
+    def accountBalance(df: pd.DataFrame) -> pd.Series:
+        """
+        Calculate the current balance for each account.
+        - Uses the most recent 'Balance' value if available.
+        - Falls back to (Deposit - Payment) if Balance is missing or zero.
+    
+        Parameters:
+            df (pd.DataFrame): Transactions dataframe.
+    
+        Returns:
+            pd.Series: A series containing the latest balance for each account.
+        """
+        if "Account" not in df.columns or ("Balance" not in df.columns and "Payment" not in df.columns and "Deposit" not in df.columns):
+            return pd.Series(dtype=float)  # Return empty Series if required columns are missing
+    
+        # Get the most recent balance for each account (sort by Date if applicable)
+        if "Date" in df.columns:
+            #df = DataFrameProcessor.convertToDatetime(df)
+            df = df.sort_values(by="Date", ascending=True)
+    
+        latest_balances = df.groupby("Account")["Balance"].last()  # Last balance entry per account
+    
+        # Compute alternative balance where latest balance is zero
+        computed_balances = df.groupby("Account").agg({"Deposit": "sum", "Payment": "sum"})
+        computed_balances = computed_balances["Deposit"] - computed_balances["Payment"]  # Convert to Series
+    
+        # Use the latest balance unless it's zero, then use computed balance
+        final_balances = latest_balances.mask(latest_balances == 0, computed_balances)
+    
+        return final_balances
 
-class DataHandling:
+class DataManager:
     @staticmethod
     def readCSV(file_path:'str') -> pd.DataFrame:
         """
@@ -157,7 +188,7 @@ class DataHandling:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open file: {e}")
             return pd.DataFrame()
-        
+    @staticmethod     
     def readXLSX(file_path):
         """
         Load financial data from an Excel (XLSX) file
@@ -174,7 +205,125 @@ class DataHandling:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open file: {e}")
             return pd.DataFrame()        
+    @staticmethod 
+    def retrieveData() -> List[Tuple[str, pd.DataFrame]]:
+        """Opens a CSV file, parses it, and converts it into the expected format."""
+        #file_paths = filedialog.askopenfilenames(filetypes=[("CSV files", "*.csv"), ("Excel files", "*.xlsx")])
+        
+        file_paths = [
+                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Checking.csv",
+                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Credit.csv",
+                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Hyundai Loan.csv",
+                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Savings.csv", 
+                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/Capital One Credit.csv",
+                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Checking.csv",
+                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Credit.csv",
+                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Savings.csv"]        
+        
+        if not file_paths:
+            return [] # User cancelled file selection  
+        
+        parsed_data = []
+
+        for file_path in file_paths:
+            file_type       = file_path.split(".")[-1]
+            account_name    = file_path.split("/")[-1].split(".")[0] 
+
+            if file_type == 'csv':
+                df = DataManager.readCSV(file_path)
+            elif file_type == 'xlsx':
+                df = DataManager.readXLSX(file_path)
+            else:
+                continue # Skip unsupported file types
+            
+            parsed_data.append((account_name, df))
+
+        return parsed_data
+    @staticmethod     
+    def parseNewDF(df:pd.DataFrame, account_name: str, dashboard: "Dashboard") -> pd.DataFrame:
+        """
+        Parses new data files and assigns correct formatting based on account type.
+        - Determines if the file is an investment or banking account.
+        - Standardizes column headers.
+        - Converts necessary fields.
     
+        Parameters:
+            df (pd.DataFrame): DataFrame containing the CSV data.
+            account (str): Account name derived from the filename.
+    
+        Returns:
+            pd.DataFrame: Formatted DataFrame ready for use.
+        """            
+        
+        # Define keywords to differentiate account types
+        investment_keywords = ["TSP", "IRA", "401K", "Investment", "Stocks", "Bonds", "Mutual Funds", "TRS", "Retirement"]
+        banking_keywords = ["Checking", "Savings", "Credit", "Loan"]
+    
+        # Guess account type based on filename
+        account_type = "Banking"
+        for keyword in investment_keywords:
+            if keyword.lower() in account_name.lower():
+                account_type = "Investment"
+                break
+        for keyword in banking_keywords:
+            if keyword.lower() in account_name.lower():
+                account_type = "Banking"
+                break
+        
+        # Normalize column headers
+        header_mapping = {
+            "Transaction ID": "Number",
+            "Transaction Date": "Date",
+            "Description": "Payee",
+            "Amount": "Payment",
+            "Credit": "Deposit",
+            "Debit": "Payment",
+            "Memo": "Note",
+            "Shares": "Shares",  # Investment-specific
+            "Ticker": "Ticker",  # Investment-specific
+            "Market Value": "MarketValue"  # Investment-specific
+        }
+        
+        # Normalize column headers
+        df.columns = [header_mapping.get(col, col) for col in df.columns]
+        
+        # Check for investment-specific columns and override classification if found
+        if any(col in df.columns for col in ["Shares", "Ticker", "Market Value"]):
+            account_type = "Investment"
+        
+        # Ensure required columns exist
+
+        if account_type == 'Banking':
+            expected_headers = list(dashboard.banking_column_widths)
+        else:
+            expected_headers = list(dashboard.investment_column_widths)
+            
+        for col in expected_headers:
+            if col not in df.columns:
+                df[col] = ""  # Add missing columns
+                
+        # Ensure all expected headers exist
+        for col in expected_headers:
+            if col not in df.columns:
+                df[col] = ""  # Fill missing columns with empty values
+        
+        # Convert data types as necessary
+        df = DataFrameProcessor.convertToDatetime(df)
+        df = DataFrameProcessor.sortDataFrame(df)
+        df = DataFrameProcessor.getDataFrameIndex(df) 
+        
+        # Convert numeric fields if applicable
+        df = DataFrameProcessor.convertCurrency(df)
+        
+        # Assign account name and type
+        df['Account'] = account_name
+        df['Account Type'] = account_type
+
+        # Select only the relevant columns in the correct order
+        df = df[expected_headers]
+  
+        return df       
+    @staticmethod     
     def updateData() -> None:
         """
         Updates the financial data based on CSV files.
@@ -185,7 +334,7 @@ class DataHandling:
         #self.selectFilesAndFolders(update=True)
         #TODO Add functionality
         return
-    
+    @staticmethod 
     def reloadData() -> None:
         """
         Reloads financial data by triggering the file selection function.
@@ -198,127 +347,222 @@ class DataHandling:
         #self.selectFilesAndFolders(reload=True) 
         #TODO Add functionality
         return
+    @staticmethod 
+    def compareOldAndNewDF(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compare two DataFrames and return rows in df1 that are not present in df2.
     
-    def selectFilesAndFolders(self, event=None, reload=False, update=False):
-        """Open file dialog to select csv or pkl file(s)"""
+        This function:
+            - Removes the 'Category' column from df1 if present.
+            - Converts the 'Date' column to a consistent date format.
+            - Drops 'Category' and 'Index' columns from df2 if present.
+            - Identifies rows unique to df1.
+    
+        Parameters:
+            df1 (pd.DataFrame): First DataFrame (typically the new dataset).
+            df2 (pd.DataFrame): Second DataFrame (typically the older dataset for comparison).
+    
+        Returns:
+            pd.DataFrame: Rows from df1 that are not present in df2.
+        """
+        # Drop 'Category' from df1 if present
+        df1 = df1.drop(columns=['Category'], errors='ignore')
+    
+        # Convert 'Date' column to datetime and retain only the date part
+        df1['Date'] = pd.to_datetime(df1['Date'], dayfirst=False, format='mixed').dt.date
+    
+        # Drop 'Category' and 'Index' from df2 if they exist
+        df2 = df2.drop(columns=[col for col in ['Category', 'Index'] if col in df2.columns], errors='ignore')
+    
+        # Identify rows in df1 that are not present in df2
+        return df1.loc[~df1.apply(tuple, axis=1).isin(df2.apply(tuple, axis=1))]
+    @staticmethod 
+    def addNewValuesToDF(df1: pd.DataFrame, df2: pd.DataFrame):
+        """
+        Combine two DataFrames while preserving category information.
+    
+        This function:
+            - Concatenates df1 and df2.
+            - Drops the 'Index' column if present.
+    
+        Parameters:
+            df1 (pd.DataFrame): First DataFrame.
+            df2 (pd.DataFrame): Second DataFrame.
+    
+        Returns:
+            pd.DataFrame: Merged DataFrame with all unique rows.
+        """
+        merged_df = pd.concat([df1, df2], ignore_index=True).drop(columns=['Index'], errors='ignore')
         
-        def compareOldAndNewDF(df1, df2):
-            """
-            Compare two DataFrames and return rows in df1 that are not present in df2.
-        
-            This function:
-                - Removes the 'Category' column from df1 if present.
-                - Converts the 'Date' column to a consistent date format.
-                - Drops 'Category' and 'Index' columns from df2 if present.
-                - Identifies rows unique to df1.
-        
-            Parameters:
-                df1 (pd.DataFrame): First DataFrame (typically the new dataset).
-                df2 (pd.DataFrame): Second DataFrame (typically the older dataset for comparison).
-        
-            Returns:
-                pd.DataFrame: Rows from df1 that are not present in df2.
-            """
-            # Drop 'Category' from df1 if present
-            df1 = df1.drop(columns=['Category'], errors='ignore')
-        
-            # Convert 'Date' column to datetime and retain only the date part
-            df1['Date'] = pd.to_datetime(df1['Date'], dayfirst=False, format='mixed').dt.date
-        
-            # Drop 'Category' and 'Index' from df2 if they exist
-            df2 = df2.drop(columns=[col for col in ['Category', 'Index'] if col in df2.columns], errors='ignore')
-        
-            # Identify rows in df1 that are not present in df2
-            return df1.loc[~df1.apply(tuple, axis=1).isin(df2.apply(tuple, axis=1))]
-        
-        def addNewValuesToDF(df1, df2):
-            """
-            Combine two DataFrames while preserving category information.
-        
-            This function:
-                - Concatenates df1 and df2.
-                - Drops the 'Index' column if present.
-        
-            Parameters:
-                df1 (pd.DataFrame): First DataFrame.
-                df2 (pd.DataFrame): Second DataFrame.
-        
-            Returns:
-                pd.DataFrame: Merged DataFrame with all unique rows.
-            """
-            merged_df = pd.concat([df1, df2], ignore_index=True).drop(columns=['Index'], errors='ignore')
-            
-            return merged_df               
-        
-        # Reading in an updated csv file to add only new info and not lose old category information
-        if update and not self.income_data.empty and not self.expenses_data.empty:
-            filetypes = [("CSV Files", "*.csv")]
-            
-            data_files = filedialog.askopenfilenames(title="Select Files", filetypes=filetypes)
-            
-            if len(data_files) != 0:
-                for data_file in data_files:
-                    inc, exp = loadCSVFile(data_file)
-                    
-                    new_inc = compareOldAndNewDF(inc, self.income_data.copy())
-                    new_exp = compareOldAndNewDF(exp, self.expenses_data.copy())
-                    
-                    if not new_inc.empty:
-                        self.income_data = addNewValuesToDF(self.income_data.copy(), new_inc)
-                    if not new_exp.empty:
-                        self.expenses_data = addNewValuesToDF(self.expenses_data.copy(), new_exp)
-                    
-                self.current_window = ''
-                self.setupDataFrames()
-                    
+        return merged_df 
+
+class TransactionManager:    
+    @staticmethod 
+    def editTransaction(dashboard):
+        """Edits a selected transaction from the table."""
+        selected_items = dashboard.tree.selection()
+        if not selected_items:
+            messagebox.showwarning("Warning", "No transaction selected for editing.")
             return
-        
-        # Function to reload the last save file
-        if reload:
-            try:
-                with open(self.last_saved_file, 'r') as f:
-                    data_files = f.readlines()
-                if os.path.exists(data_files[0]):   
-                    self.income_data    = pd.DataFrame()
-                    self.expenses_data  = pd.DataFrame()
-                else:
-                    reload = False
-            except:
-                reload = False
-            
-        if not reload:
-            filetypes = [("Pickle Files", "*.pkl"), 
-                         ("Excel Files", "*.xlsx"), 
-                         ("CSV Files", "*.csv")]
-            
-            filetypes = filetypes[::-1]
-                
-            data_files = filedialog.askopenfilenames(title="Select Files", filetypes=filetypes)       
-        
-        if len(data_files) != 0:
-            for data_file in data_files:
-                if data_file.endswith(".pkl"):
-                    inc, exp, self.starting_data = loadPickleFile(data_file)
-                elif data_file.endswith(".xlsx"):
-                    inc, exp, self.starting_data = loadXLSXFile(data_file)
-                elif data_file.endswith(".csv"):
-                    #TODO add in functionality
-                    return
-                    #inc, exp = loadCSVFile(data_file)
-                
-                self.income_data    = pd.concat([self.income_data, inc], ignore_index=False)
-                self.expenses_data  = pd.concat([self.expenses_data, exp], ignore_index=False)
-                    
-                self.data_files.append(data_file)
-                    
-            self.setupDataFrames()
-               
-        else:
-            messagebox.showinfo("Error", message = "No File Selected")
-            
-        return
     
- 
+        selected_values = dashboard.tree.item(selected_items[0], "values")
+        headers = list(dashboard.banking_column_widths.keys())
+    
+        prefill_data = dict(zip(headers, selected_values))
+        TransactionManager.openTransactionWindow(prefill_data)
+    @staticmethod     
+    def openTransactionWindow(dashboard: "Dashboard", prefill_data=None):
+        """Opens a transaction window for adding/editing a transaction, pre-filling if data is provided."""
+        
+        #TODO FIX
+    
+        def validateInputs():
+            """Checks if inputs match expected types before submission."""
+            errors = []
+            input_values = {header: entry.get().strip() for header, entry in entry_fields.items()}
+    
+            if all(value == "" for value in input_values.values()):
+                messagebox.showwarning("Warning", "Cannot save an empty transaction.")
+                return False
+    
+            for header, entry in entry_fields.items():
+                value = entry.get().strip()
+    
+                if header in ["Payment", "Deposit", "Balance"]:
+                    value = value if value else "0.00"
+                    try:
+                        float_value = float(value.replace("$", "").replace(",", ""))
+                        entry_fields[header].delete(0, tk.END)
+                        entry_fields[header].insert(0, f"{float_value:.2f}")
+                        entry.config(bg="white")
+                    except ValueError:
+                        errors.append(f"'{header}' must be a valid number.")
+                        entry.config(bg="lightcoral")
+    
+                elif header == "Date":
+                    if not value.strip():
+                        value = "1970-01-01"
+                    try:
+                        parsed_date = datetime.strptime(value, "%Y-%m-%d").date()
+                        entry_fields[header].delete(0, tk.END)
+                        entry_fields[header].insert(0, parsed_date.strftime("%Y-%m-%d"))
+                        entry.config(bg="white")
+                    except ValueError:
+                        errors.append(f"'{header}' must be a valid date (YYYY-MM-DD).")
+                        entry.config(bg="lightcoral")
+    
+            if errors:
+                messagebox.showerror("Input Error", "\n".join(errors))
+                return False
+            return True
+    
+        def submitTransaction(event=None):
+            """Parses, validates, and processes the transaction."""
+            stored_values = {header: entry.get().strip() for header, entry in entry_fields.items()}
+        
+            if not validateInputs():
+                transaction_window.destroy()
+                return stored_values
+        
+            # Has to be included twice to overcome overrides. IDK. It works.
+            stored_values = {header: entry.get().strip() for header, entry in entry_fields.items()}
+        
+            # Convert stored values to DataFrame
+            new_df = pd.DataFrame([stored_values])
+            new_df = DataManager.parseNewDF(new_df, stored_values.get("Account", "Unknown"), dashboard)
+        
+            # Ensure proper data type conversion
+            for col in ["Number", "Payment", "Deposit", "Balance"]:
+                if col in new_df.columns:
+                    new_df[col] = pd.to_numeric(new_df[col], errors='coerce').fillna(0).astype(int)  # Convert to int
+        
+            if prefill_data:
+                # Editing an existing transaction
+                selected_items = dashboard.tree.selection()
+                selected_number = int(dashboard.tree.item(selected_items[0], "values")[0])  # Convert to int for index matching
+        
+                # Find the index of the selected transaction in all_data
+                index_to_update = dashboard.master.all_data[dashboard.master.all_data["Number"] == selected_number].index
+        
+                if not index_to_update.empty:
+                    # Ensure new_df has the same columns as all_data before assignment
+                    new_df = new_df[dashboard.master.all_data.columns]
+        
+                    # Assign values row-wise
+                    for col in dashboard.master.all_data.columns:
+                        dashboard.master.all_data.loc[index_to_update, col] = new_df.iloc[0][col]
+        
+                else:
+                    messagebox.showerror("Error", "Transaction not found for editing.")
+                    return
+            else:
+                # Adding new transaction
+                dashboard.master.all_data = pd.concat([dashboard.master.all_data, new_df], ignore_index=True)
+        
+            dashboard.master.all_data = DataFrameProcessor.getDataFrameIndex(dashboard.master.all_data)
+            dashboard.updateTable(dashboard.master.all_data)
+        
+            transaction_window.destroy()
+    
+        def closeWindow(event=None):
+            """Closes the transaction window."""
+            transaction_window.destroy()
+    
+        # Create transaction window
+        transaction_window = tk.Toplevel(dashboard)
+        transaction_window.title("Edit Transaction" if prefill_data else "Add Transaction")
+        transaction_window.geometry("300x330")  # Increased size for better scaling
+    
+        transaction_window.bind("<Escape>", closeWindow)
+        transaction_window.bind("<Return>", submitTransaction)
+    
+        entry_fields = {}
+        columns = list(dashboard.banking_column_widths.keys())[1:]
+    
+        # Configure the second column to expand with window resizing
+        transaction_window.grid_columnconfigure(1, weight=1)
+    
+        for idx, column in enumerate(columns):
+            tk.Label(transaction_window, text=column, anchor="w").grid(row=idx, column=0, padx=10, pady=5, sticky="w")
+    
+            entry = tk.Entry(transaction_window)
+            entry.grid(row=idx, column=1, padx=10, pady=5, sticky="ew")
+    
+            if prefill_data and column in prefill_data:
+                entry.insert(0, prefill_data[column])
+    
+            entry_fields[column] = entry
+    
+        submit_button = tk.Button(transaction_window, text="Submit", command=submitTransaction)
+        submit_button.grid(row=len(columns), column=0, columnspan=2, pady=10)
+    
+        submit_button.focus_set()
+    
+    @staticmethod 
+    def deleteTransaction(dashboard: "Dashboard") -> None:
+        """Deletes the selected transaction(s) from the data table."""
+        selected_items = dashboard.tree.selection()
+        if not selected_items:
+            messagebox.showwarning("Warning", "No transactions selected!")
+            return
+    
+        selected_numbers = [dashboard.tree.item(item, "values")[0] for item in selected_items]
+        selected_numbers = set(map(int, selected_numbers))
+    
+        indices_to_drop = dashboard.master.all_data[dashboard.master.all_data["Number"].isin(selected_numbers)].index
+    
+        confirm = messagebox.askyesno("Confirm Delete", 
+                                      f"Are you sure you want to delete {len(indices_to_drop)} transaction(s)?", 
+                                      parent=dashboard.master)
+        if confirm is None or not confirm:  # Explicitly check for None
+            return  # User canceled or closed the dialog, so exit
+    
+        dashboard.master.all_data = dashboard.master.all_data.drop(indices_to_drop).reset_index(drop=True)
+        dashboard.master.all_data = DataFrameProcessor.getDataFrameIndex(dashboard.master.all_data)
+    
+        dashboard.updateTable(dashboard.master.all_data)
+                    
+    
 class Dashboard(tk.Frame):
     def __init__(self, master):
         super().__init__(master)
@@ -328,7 +572,7 @@ class Dashboard(tk.Frame):
         
         # Define column widths for transaction table
         self.banking_column_widths = {
-            "Number": 25,
+            "Number": 35,
             "Date": 50,
             "Payee": 350,
             "Category": 200,
@@ -337,11 +581,11 @@ class Dashboard(tk.Frame):
             "Balance": 100,
             "Account": 100,
             "Note": 200, 
-            "Account Type": 0
+            "Account Type": 100
         }
         
         self.investment_column_widths = {
-            "Number": 25,
+            "Number": 35,
             "Date": 50,
             "Payee": 350,
             "Category": 200,
@@ -350,7 +594,7 @@ class Dashboard(tk.Frame):
             "Balance": 100,
             "Account": 100,
             "Note": 200, 
-            "Account Type": 0
+            "Account Type": 100
         }
         
         self.account_balances = {}
@@ -361,8 +605,7 @@ class Dashboard(tk.Frame):
         self.categories = sorted(self.categories)
         
         self.createWidgets()  # Initialize UI elements
-
-        
+      
     def createWidgets(self):
         """Creates and places all main widgets for the dashboard."""
         
@@ -454,15 +697,16 @@ class Dashboard(tk.Frame):
         
         self.buttons = []
         button_data = [
-            ("Add",      "add.png",      self.addTransaction),
-            ("Edit",     "edit.png",     self.editTransaction),
-            ("Delete",   "delete.png",   self.deleteTransaction),
-            ("Retrieve", "retrieve.png", self.retrieveData),
-            ("Account",  "account.png",  self.chooseAccounts),
-            ("Category", "category.png", self.viewCategories),
-            ("Payee",    "payee.png",    self.viewPayees),
-            ("Budget",   "budget.png",   self.viewBudget),
-            ("Options",  "options.png",  self.viewOptions),
+            ("Add",         "add.png",      self.addTransaction),
+            ("Edit",        "edit.png",     self.editTransaction),
+            ("Delete",      "delete.png",   self.deleteTransaction),
+            ("Retrieve",    "retrieve.png", self.retrieveData),
+            ("Payee",       "payee.png",    self.viewPayees),
+            ("Category",    "category.png", self.viewCategories),
+            ("Accounts",    "account.png",  self.chooseAccounts),
+            ("Stocks",      "stonks.png",   self.chooseAccounts),
+            ("Budget",      "budget.png",   self.viewBudget),
+            ("Options",     "options.png",  self.viewOptions),
         ]
         
         for index, (text, icon, command) in enumerate(button_data):
@@ -515,28 +759,45 @@ class Dashboard(tk.Frame):
         
         # Bind double-click to edit cell
         self.tree.bind("<Double-1>", self.editCell)
+        
+    def retrieveData(self):
+        """
+        Calls DataManager.retrieveData() once, processes each file using parseNewDF, and updates the UI.
+        """
+        retrieved_data = DataManager.retrieveData()  # Get list of (account_name, df) tuples
     
-    def addTransaction(self):
-        """Calls the shared transaction window function with no pre-filled data (new entry)."""
-        self._openTransactionWindow(prefill_data=None)
-    
-    def editTransaction(self):
-        """Calls the shared transaction window function with pre-filled data from the selected row."""
-        selected_items = self.tree.selection()
-        if not selected_items:
-            messagebox.showwarning("Warning", "No transaction selected for editing.")
+        if not retrieved_data:  # If no files selected, exit function
             return
     
-        # Retrieve the selected row's data
-        selected_values = self.tree.item(selected_items[0], "values")
-        headers = list(self.banking_column_widths.keys())
+        all_parsed_data = []
     
-        # Map the selected values to their headers
-        prefill_data = dict(zip(headers, selected_values))
+        for account_name, df in retrieved_data:
+            if df is not None and not df.empty:
+                # Ensure Dashboard instance is passed to parseNewDF
+                parsed_df = DataManager.parseNewDF(df, account_name, self)
+                all_parsed_data.append(parsed_df)
     
-        # Open transaction window with prefilled values
-        self._openTransactionWindow(prefill_data)
-        
+        if all_parsed_data:
+            # Combine all parsed data into a single DataFrame
+            final_df = pd.concat(all_parsed_data, ignore_index=True)
+    
+            # Store processed data in the app and update UI
+            self.master.all_data = final_df.copy()
+            self.master.all_data = DataFrameProcessor.getDataFrameIndex(self.master.all_data)
+            self.updateTable(self.master.all_data.copy())
+            
+    def addTransaction(self):
+        """Calls TransactionManager.addTransaction, passing the Dashboard instance."""
+        TransactionManager.openTransactionWindow(self, prefill_data=None)
+    
+    def editTransaction(self):
+        """Calls TransactionManager.editTransaction, passing the Dashboard instance."""
+        TransactionManager.editTransaction(self)
+    
+    def deleteTransaction(self):
+        """Calls TransactionManager.deleteTransaction, passing the Dashboard instance."""
+        TransactionManager.deleteTransaction(self)     
+            
     def selectAllRows(self):
         """Selects all rows in the transaction table."""
         self.tree.selection_set(self.tree.get_children())
@@ -666,276 +927,7 @@ class Dashboard(tk.Frame):
             dropdown.focus_set()
             
             dropdown.bind("<FocusOut>", cancelEdit)
-            
-    def _openTransactionWindow(self, prefill_data=None):
-        """Opens a transaction window for adding/editing a transaction, pre-filling if data is provided."""
-    
-        def validateInputs():
-            """Checks if inputs match expected types before submission."""
-            errors = []
-            input_values = {header: entry.get().strip() for header, entry in entry_fields.items()}
-    
-            if all(value == "" for value in input_values.values()):
-                messagebox.showwarning("Warning", "Cannot save an empty transaction.")
-                return False
-    
-            for header, entry in entry_fields.items():
-                value = entry.get().strip()
-    
-                if header in ["Payment", "Deposit", "Balance"]:
-                    value = value if value else "0.00"
-                    try:
-                        float_value = float(value.replace("$", "").replace(",", ""))
-                        entry_fields[header].delete(0, tk.END)
-                        entry_fields[header].insert(0, f"{float_value:.2f}")
-                        entry.config(bg="white")
-                    except ValueError:
-                        errors.append(f"'{header}' must be a valid number.")
-                        entry.config(bg="lightcoral")
-    
-                elif header == "Date":
-                    if not value.strip():
-                        value = "1970-01-01"
-                    try:
-                        parsed_date = datetime.strptime(value, "%Y-%m-%d").date()
-                        entry_fields[header].delete(0, tk.END)
-                        entry_fields[header].insert(0, parsed_date.strftime("%Y-%m-%d"))
-                        entry.config(bg="white")
-                    except ValueError:
-                        errors.append(f"'{header}' must be a valid date (YYYY-MM-DD).")
-                        entry.config(bg="lightcoral")
-    
-            if errors:
-                messagebox.showerror("Input Error", "\n".join(errors))
-                return False
-            return True
-    
-        def submitTransaction(event=None):
-            """Parses, validates, and processes the transaction."""
-            stored_values = {header: entry.get().strip() for header, entry in entry_fields.items()}
-        
-            if not validateInputs():
-                transaction_window.destroy()
-                self._openTransactionWindow(stored_values)
-                return
-        
-            # Has to be included twice to overcome overrides. IDK. It works.
-            stored_values = {header: entry.get().strip() for header, entry in entry_fields.items()}
-        
-            # Convert stored values to DataFrame
-            new_df = pd.DataFrame([stored_values])
-            new_df = self.parseNewDF(new_df, stored_values.get("Account", "Unknown"))
-        
-            # Ensure proper data type conversion
-            for col in ["Number", "Payment", "Deposit", "Balance"]:
-                if col in new_df.columns:
-                    new_df[col] = pd.to_numeric(new_df[col], errors='coerce').fillna(0).astype(int)  # Convert to int
-        
-            if prefill_data:
-                # Editing an existing transaction
-                selected_items = self.tree.selection()
-                selected_number = int(self.tree.item(selected_items[0], "values")[0])  # Convert to int for index matching
-        
-                # Find the index of the selected transaction in all_data
-                index_to_update = self.master.all_data[self.master.all_data["Number"] == selected_number].index
-        
-                if not index_to_update.empty:
-                    # Ensure new_df has the same columns as all_data before assignment
-                    new_df = new_df[self.master.all_data.columns]
-        
-                    # Assign values row-wise
-                    for col in self.master.all_data.columns:
-                        self.master.all_data.loc[index_to_update, col] = new_df.iloc[0][col]
-        
-                else:
-                    messagebox.showerror("Error", "Transaction not found for editing.")
-                    return
-            else:
-                # Adding new transaction
-                self.master.all_data = pd.concat([self.master.all_data, new_df], ignore_index=True)
-        
-            self.master.all_data = DataFrameProcessor.getDataFrameIndex(self.master.all_data)
-            self.updateTable(self.master.all_data)
-        
-            transaction_window.destroy()
-    
-        def closeWindow(event=None):
-            """Closes the transaction window."""
-            transaction_window.destroy()
-    
-        # Create transaction window
-        transaction_window = tk.Toplevel(self)
-        transaction_window.title("Edit Transaction" if prefill_data else "Add Transaction")
-        transaction_window.geometry("250x330")
-    
-        transaction_window.bind("<Escape>", closeWindow)
-        transaction_window.bind("<Return>", submitTransaction)
-    
-        entry_fields = {}
-        columns = list(self.banking_column_widths.keys())[1:]
-    
-        for idx, column in enumerate(columns):
-            tk.Label(transaction_window, text=column, anchor="w").grid(row=idx, column=0, padx=10, pady=5, sticky="w")
-    
-            entry = tk.Entry(transaction_window)
-            entry.grid(row=idx, column=1, padx=10, pady=5, sticky="ew")
-    
-            if prefill_data and column in prefill_data:
-                entry.insert(0, prefill_data[column])
-    
-            entry_fields[column] = entry
-    
-        submit_button = tk.Button(transaction_window, text="Submit", command=submitTransaction)
-        submit_button.grid(row=len(columns), column=0, columnspan=2, pady=10)
-        submit_button.focus_set()
-    
-    def deleteTransaction(self):
-        """Deletes the selected transaction(s) from self.master.all_data."""
-    
-        selected_items = self.tree.selection()  # Get all selected rows
-        if not selected_items:
-            messagebox.showwarning("Warning", "No transactions selected!")
-            return
-    
-        # Retrieve transaction "Number" from selected rows
-        selected_numbers = [self.tree.item(item, "values")[0] for item in selected_items]  # Get Number column
-    
-        # Convert to integers (since they might be strings)
-        selected_numbers = set(map(int, selected_numbers))
-    
-        # Find corresponding indices in self.master.all_data
-        indices_to_drop = self.master.all_data[self.master.all_data["Number"].isin(selected_numbers)].index
-    
-        # Confirm deletion
-        confirm = messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete {len(indices_to_drop)} transaction(s)?")
-        if not confirm:
-            return
-
-        # Drop selected transactions and reset index
-        self.master.all_data = self.master.all_data.drop(indices_to_drop).reset_index(drop=True)
-        self.master.all_data = DataFrameProcessor.getDataFrameIndex(self.master.all_data)
-    
-        # Update table UI
-        self.updateTable(self.master.all_data)
-        
-    def retrieveData(self) -> None:
-        """Opens a CSV file, parses it, and converts it into the expected format."""
-        #file_paths = filedialog.askopenfilenames(filetypes=[("CSV files", "*.csv"), ("Excel files", "*.xlsx")])
-        
-        file_paths = [
-                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Checking.csv",
-                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Credit.csv",
-                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Hyundai Loan.csv",
-                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Savings.csv", 
-                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/Capital One Credit.csv",
-                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Checking.csv",
-                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Credit.csv",
-                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Savings.csv"]        
-        
-        if not file_paths:
-            return  # User cancelled file selection  
-
-        for file_path in file_paths:
-            file_type       = file_path.split(".")[-1]
-            account_name    = file_path.split("/")[-1].split(".")[0] 
-
-            if file_type == 'csv':
-                df = DataHandling.readCSV(file_path)
-            elif file_type == 'xlsx':
-                df = DataHandling.readXLSX(file_path)
-                
-            df = self.parseNewDF(df, account_name)
-            
-            self.master.all_data = pd.concat([self.master.all_data, df]) 
-
-        self.master.all_data = DataFrameProcessor.getDataFrameIndex(self.master.all_data) 
-
-        self.updateTable(self.master.all_data)
-        messagebox.showinfo("Success", "Transactions successfully loaded and formatted!")
-              
-    def parseNewDF(self, df:pd.DataFrame, account: 'str') -> pd.DataFrame:
-        """
-        Parses new data files and assigns correct formatting based on account type.
-        - Determines if the file is an investment or banking account.
-        - Standardizes column headers.
-        - Converts necessary fields.
-    
-        Parameters:
-            df (pd.DataFrame): DataFrame containing the CSV data.
-            account (str): Account name derived from the filename.
-    
-        Returns:
-            pd.DataFrame: Formatted DataFrame ready for use.
-        """            
-        
-        # Define keywords to differentiate account types
-        investment_keywords = ["TSP", "IRA", "401K", "Investment", "Stocks", "Bonds", "Mutual Funds", "TRS", "Retirement"]
-        banking_keywords = ["Checking", "Savings", "Credit", "Loan"]
-    
-        # Guess account type based on filename
-        account_type = "Banking"
-        for keyword in investment_keywords:
-            if keyword.lower() in account.lower():
-                account_type = "Investment"
-                break
-        for keyword in banking_keywords:
-            if keyword.lower() in account.lower():
-                account_type = "Banking"
-                break
-        
-        # Normalize column headers
-        header_mapping = {
-            "Transaction ID": "Number",
-            "Transaction Date": "Date",
-            "Description": "Payee",
-            "Amount": "Payment",
-            "Credit": "Deposit",
-            "Debit": "Payment",
-            "Memo": "Note",
-            "Shares": "Shares",  # Investment-specific
-            "Ticker": "Ticker",  # Investment-specific
-            "Market Value": "MarketValue"  # Investment-specific
-        }
-        
-        # Normalize column headers
-        df.columns = [header_mapping.get(col, col) for col in df.columns]
-        
-        # Check for investment-specific columns and override classification if found
-        if any(col in df.columns for col in ["Shares", "Ticker", "Market Value"]):
-            account_type = "Investment"
-        
-        # Ensure required columns exist
-
-        if account_type == 'Banking':
-            expected_headers = list(self.banking_column_widths)
-        else:
-            expected_headers = list(self.investment_column_widths)
-            
-        for col in expected_headers:
-            if col not in df.columns:
-                df[col] = ""  # Add missing columns
-                
-        # Ensure all expected headers exist
-        for col in expected_headers:
-            if col not in df.columns:
-                df[col] = ""  # Fill missing columns with empty values
-        
-        # Convert data types as necessary
-        df = DataFrameProcessor.convertToDatetime(df)
-        df = DataFrameProcessor.sortDataFrame(df)
-        
-        # Convert numeric fields if applicable
-        df = DataFrameProcessor.convertCurrency(df)
-        
-        # Assign account name and type
-        df['Account'] = account
-        df['Account Type'] = account_type
-
-        # Select only the relevant columns in the correct order
-        df = df[expected_headers]
-        
-        return df       
-        
+                         
     def chooseAccounts(self):
         """Placeholder for deleting a transaction."""
         print("Choose Accounts")
@@ -981,7 +973,7 @@ class Dashboard(tk.Frame):
             formatted_row[5] = f"${row['Deposit'] / 100:.2f}"  # Format 'Deposit'
             formatted_row[6] = f"${row['Balance'] / 100:.2f}"  # Format 'Balance'
             
-            self.tree.insert("", tk.END, values=formatted_row[:-1])
+            self.tree.insert("", tk.END, values=formatted_row)
             
         Tables.applyBandedRows(self.tree)
         
@@ -997,7 +989,7 @@ class Dashboard(tk.Frame):
         banking_df = df[df["Account Type"] == "Banking"]
      
         # Calculate account balances
-        self.account_balances = self.accountBalance(banking_df)
+        self.account_balances = DataFrameProcessor.accountBalance(banking_df)
      
         # Add "All Banking Accounts" option
         self.accounts_list.insert(tk.END, "All Banking Accounts")
@@ -1014,7 +1006,7 @@ class Dashboard(tk.Frame):
         investment_df = df[df["Account Type"] == "Investment"]
     
         # Calculate account balances
-        self.investment_balances = self.accountBalance(investment_df)
+        self.investment_balances = DataFrameProcessor.accountBalance(investment_df)
     
         # Add "All Investment Accounts" option
         self.investments_list.insert(tk.END, "All Investment Accounts")
@@ -1023,37 +1015,6 @@ class Dashboard(tk.Frame):
         for account, balance in self.investment_balances.items():
             self.investments_list.insert(tk.END, f"{account} ${balance / 100:.2f}")  # Format balance
             
-    def accountBalance(self, df: pd.DataFrame) -> pd.Series:
-        """
-        Calculate the current balance for each account.
-        - Uses the most recent 'Balance' value if available.
-        - Falls back to (Deposit - Payment) if Balance is missing or zero.
-    
-        Parameters:
-            df (pd.DataFrame): Transactions dataframe.
-    
-        Returns:
-            pd.Series: A series containing the latest balance for each account.
-        """
-        if "Account" not in df.columns or ("Balance" not in df.columns and "Payment" not in df.columns and "Deposit" not in df.columns):
-            return pd.Series(dtype=float)  # Return empty Series if required columns are missing
-    
-        # Get the most recent balance for each account (sort by Date if applicable)
-        if "Date" in df.columns:
-            #df = DataFrameProcessor.convertToDatetime(df)
-            df = df.sort_values(by="Date", ascending=True)
-    
-        latest_balances = df.groupby("Account")["Balance"].last()  # Last balance entry per account
-    
-        # Compute alternative balance where latest balance is zero
-        computed_balances = df.groupby("Account").agg({"Deposit": "sum", "Payment": "sum"})
-        computed_balances = computed_balances["Deposit"] - computed_balances["Payment"]  # Convert to Series
-    
-        # Use the latest balance unless it's zero, then use computed balance
-        final_balances = latest_balances.mask(latest_balances == 0, computed_balances)
-    
-        return final_balances
-        
     def smoothScroll(self, event=None) -> None:
         """Smooth scrolling for all sidebar listboxes."""
         widget = event.widget
