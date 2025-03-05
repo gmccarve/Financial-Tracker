@@ -21,9 +21,9 @@ from Dashboard import Dashboard
 #from Statistics import Statistics
 #from Investments import Investments
 
-#pd.set_option('display.max_columns', None)
+pd.set_option('display.max_columns', None)
 #pd.set_option('display.max_rows', None)
-#pd.set_option('display.float_format','{:.2f}'.format)
+pd.set_option('display.float_format','{:.2f}'.format)
 
 class FinanceTracker(tk.Tk):
     def __init__(self):
@@ -76,7 +76,7 @@ class FinanceTracker(tk.Tk):
     
     def bindShortcuts(self):
         """Bind keyboard shortcuts to functions."""
-        #self.bind("<Control-a>")
+        self.bind("<Control-a>", lambda event: self.current_frame.selectAllRows())
         #self.bind("<Control-b>")
         #self.bind("<Control-c>",)
         #self.bind("<Control-d>")
@@ -105,6 +105,9 @@ class FinanceTracker(tk.Tk):
         #self.bind("<Control-z>",)
         
         self.bind("<Escape>",    lambda event: self.closeWindow())
+
+        # Bind Delete key to deleteTransaction only if a row is selected
+        self.bind("<Delete>", lambda event: self.current_frame.deleteTransaction() if self.current_frame.tree.selection() else None)
         
         return        
       

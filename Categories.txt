@@ -8,7 +8,6 @@ Furniture
 Gas
 Groceries
 House Goods
-Hyundai Loan
 Interest Payment
 Internet
 Investments
@@ -19,11 +18,15 @@ Phone
 Recreation & Entertainment
 Rent
 Shopping
-Student Loans
 Subscriptions
 Technology
 Transfer to Checking
 Transfer to Savings
-Transfers
 Travel
 Work
+Other
+Paycheck
+Refund
+Student Loan Payment
+Transfer from Savings
+Transfer from Checking

@@ -80,6 +80,19 @@ class Utility:
         last_day = (datetime(year, month + 1, 1) - timedelta(days=1)).day
         return datetime(year, month, last_day).strftime("%b %d, '%y")
     
+    def formatDateFromString(day: 'str') -> datetime:
+        """
+        Convert a month and year into the format 'Mon 'YY'.
+        
+        Parameters:
+            day (str): The day in YYYY-MM-DD format
+            
+        Returns:
+            The last day of a month given as a string in the format "MM DD 'YY"
+        """
+        new_day = day.split("-")
+        return datetime(int(new_day[0]), int(new_day[1]), int(new_day[2])).strftime("%Y-%m-%d")
+    
 class SaveFiles:
     @staticmethod
     def saveState(save_file:str, inc_data: pd.DataFrame, exp_data: pd.DataFrame, init_data: pd.DataFrame) -> None:
@@ -326,7 +339,7 @@ class Tables:
         """
         tree.delete(*tree.get_children())
         
-    def sortTableByColumn(tv, col, reverse):
+    def sortTableByColumn(tv:ttk.Treeview, col: 'str', reverse: bool) -> None:
         """Sorts a Treeview column properly, handling currency values and reapplying row colors."""
 
         def convertValue(val):
