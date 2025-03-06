@@ -396,25 +396,10 @@ class DataManager:
         
         return merged_df 
 
-class TransactionManager:    
-    @staticmethod 
-    def editTransaction(dashboard):
-        """Edits a selected transaction from the table."""
-        selected_items = dashboard.tree.selection()
-        if not selected_items:
-            messagebox.showwarning("Warning", "No transaction selected for editing.")
-            return
-    
-        selected_values = dashboard.tree.item(selected_items[0], "values")
-        headers = list(dashboard.banking_column_widths.keys())
-    
-        prefill_data = dict(zip(headers, selected_values))
-        TransactionManager.openTransactionWindow(prefill_data)
+class TransactionManager:            
     @staticmethod     
-    def openTransactionWindow(dashboard: "Dashboard", prefill_data=None):
+    def openTransactionWindow(dashboard: "Dashboard", edit=False):
         """Opens a transaction window for adding/editing a transaction, pre-filling if data is provided."""
-        
-        #TODO FIX
     
         def validateInputs():
             """Checks if inputs match expected types before submission."""
@@ -442,13 +427,23 @@ class TransactionManager:
                 elif header == "Date":
                     if not value.strip():
                         value = "1970-01-01"
-                    try:
-                        parsed_date = datetime.strptime(value, "%Y-%m-%d").date()
-                        entry_fields[header].delete(0, tk.END)
-                        entry_fields[header].insert(0, parsed_date.strftime("%Y-%m-%d"))
-                        entry.config(bg="white")
-                    except ValueError:
-                        errors.append(f"'{header}' must be a valid date (YYYY-MM-DD).")
+                    
+                    valid_date = False
+                    date_formats = ["%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y", "%d %b %Y", "%b %d, %Y"]
+
+                    for fmt in date_formats:
+                        try:
+                            parsed_date = datetime.strptime(value, fmt).date()
+                            entry_fields[header].delete(0, tk.END)
+                            entry_fields[header].insert(0, parsed_date.strftime("%Y-%m-%d"))  # Convert to standard format
+                            entry.config(bg="white")
+                            valid_date = True
+                            break
+                        except ValueError:
+                            continue  # Try next format
+                    
+                    if not valid_date:
+                        errors.append(f"'{header}' must be a valid date (YYYY-MM-DD, MM/DD/YYYY, DD-MM-YYYY, etc.).")
                         entry.config(bg="lightcoral")
     
             if errors:
@@ -475,7 +470,7 @@ class TransactionManager:
             for col in ["Number", "Payment", "Deposit", "Balance"]:
                 if col in new_df.columns:
                     new_df[col] = pd.to_numeric(new_df[col], errors='coerce').fillna(0).astype(int)  # Convert to int
-        
+
             if prefill_data:
                 # Editing an existing transaction
                 selected_items = dashboard.tree.selection()
@@ -508,9 +503,23 @@ class TransactionManager:
             """Closes the transaction window."""
             transaction_window.destroy()
     
+        if edit:
+           selected_items = dashboard.tree.selection()
+           if not selected_items:
+               messagebox.showwarning("Warning", "No transaction selected for editing.")
+               return
+       
+           selected_values = dashboard.tree.item(selected_items[0], "values")
+           headers = list(dashboard.banking_column_widths.keys())
+       
+           prefill_data = dict(zip(headers, selected_values)) 
+           
+        else:
+            prefill_data = None
+    
         # Create transaction window
         transaction_window = tk.Toplevel(dashboard)
-        transaction_window.title("Edit Transaction" if prefill_data else "Add Transaction")
+        transaction_window.title("Edit Transaction" if edit else "Add Transaction")
         transaction_window.geometry("300x330")  # Increased size for better scaling
     
         transaction_window.bind("<Escape>", closeWindow)
@@ -693,7 +702,7 @@ class Dashboard(tk.Frame):
         self.separators = []
         self.images = {}
         
-        self.button_separators = [3, 6, 7]
+        self.button_separators = [3, 5, 7]
         
         self.buttons = []
         button_data = [
@@ -703,7 +712,7 @@ class Dashboard(tk.Frame):
             ("Retrieve",    "retrieve.png", self.retrieveData),
             ("Payee",       "payee.png",    self.viewPayees),
             ("Category",    "category.png", self.viewCategories),
-            ("Accounts",    "account.png",  self.chooseAccounts),
+            ("Banking",    "account.png",  self.chooseAccounts),
             ("Stocks",      "stonks.png",   self.chooseAccounts),
             ("Budget",      "budget.png",   self.viewBudget),
             ("Options",     "options.png",  self.viewOptions),
@@ -712,7 +721,7 @@ class Dashboard(tk.Frame):
         for index, (text, icon, command) in enumerate(button_data):
             img_path = os.path.join(self.button_image_loc, icon)
             img = Image.open(img_path)
-            img = img.resize((36, 36))  # Resize image to 24x24 pixels
+            img = img.resize((36,36))  # Resize image to 24x24 pixels
             self.images[icon] = ImageTk.PhotoImage(img)
             
             try:
@@ -788,11 +797,11 @@ class Dashboard(tk.Frame):
             
     def addTransaction(self):
         """Calls TransactionManager.addTransaction, passing the Dashboard instance."""
-        TransactionManager.openTransactionWindow(self, prefill_data=None)
+        TransactionManager.openTransactionWindow(self, edit=False)
     
     def editTransaction(self):
         """Calls TransactionManager.editTransaction, passing the Dashboard instance."""
-        TransactionManager.editTransaction(self)
+        TransactionManager.openTransactionWindow(self, edit=True)
     
     def deleteTransaction(self):
         """Calls TransactionManager.deleteTransaction, passing the Dashboard instance."""
@@ -815,8 +824,7 @@ class Dashboard(tk.Frame):
                 # Convert numerical columns to valid format
                 if col_name in ["Payment", "Deposit", "Balance"]:
                     try:
-                        new_value = float(new_value.replace("$", "").replace(",", ""))
-                        new_value = f"${new_value:.2f}"  # Ensure proper formatting
+                        new_value = float(new_value.replace("$", "").replace(",", "")) * 100
                     except ValueError:
                         messagebox.showerror("Invalid Input", "Please enter a valid number.")
                         return
@@ -906,6 +914,7 @@ class Dashboard(tk.Frame):
     
             # Bind Enter and Escape keys
             entry_widget.bind("<Return>", lambda e: saveEdit(entry_widget.get()))
+            entry_widget.bind("<Tab>", lambda e: saveEdit(entry_widget.get()))
             entry_widget.bind("<FocusOut>", cancelEdit)
             
         elif col_name in ["Category", "Account"]:
@@ -928,6 +937,12 @@ class Dashboard(tk.Frame):
             
             dropdown.bind("<FocusOut>", cancelEdit)
                          
+    def smoothScroll(self, event=None) -> None:
+        """Smooth scrolling for all sidebar listboxes."""
+        widget = event.widget
+        if isinstance(widget, tk.Listbox):
+            widget.yview_scroll(-1 if event.delta > 0 else 1, "units")
+            
     def chooseAccounts(self):
         """Placeholder for deleting a transaction."""
         print("Choose Accounts")
@@ -1014,13 +1029,7 @@ class Dashboard(tk.Frame):
         # Insert individual investment accounts
         for account, balance in self.investment_balances.items():
             self.investments_list.insert(tk.END, f"{account} ${balance / 100:.2f}")  # Format balance
-            
-    def smoothScroll(self, event=None) -> None:
-        """Smooth scrolling for all sidebar listboxes."""
-        widget = event.widget
-        if isinstance(widget, tk.Listbox):
-            widget.yview_scroll(-1 if event.delta > 0 else 1, "units")
-        
+                    
     def filterTransactionsByBankingAccount(self, event):
         """Filters transactions by selected account in the listbox."""
         selected_index = self.accounts_list.curselection()
