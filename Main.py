@@ -12,14 +12,13 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import seaborn as sns
 import calendar
 from datetime import datetime, timedelta
+import pickle
 
 from typing import List, Tuple, Union
 
-#from Utility import Utility, SaveFiles, Windows, Tables
+#from Utility import Utility, Windows, Tables
 from Dashboard import Dashboard
-#from Accounts import Accounts
-#from Statistics import Statistics
-#from Investments import Investments
+from StyleConfig import StyleConfig
 
 pd.set_option('display.max_columns', None)
 #pd.set_option('display.max_rows', None)
@@ -39,11 +38,18 @@ class FinanceTracker(tk.Tk):
         self.initMenuBar()
         self.bindShortcuts()
         
+        self.loadUserSettings()
+        
         self.current_frame = Dashboard(self)
         self.current_frame.pack(fill='both', expand=True)
         
+        self.current_frame.applyStyleChanges()  # Explicitly apply styles after settings load
+        
         self.all_data = pd.DataFrame()
         
+        self.save_file_loc = os.path.join(os.path.dirname(__file__), "lastSavedFile.txt")
+        self.save_file = self.readSaveFile()
+
         return
 
     def initMenuBar(self):
@@ -51,10 +57,10 @@ class FinanceTracker(tk.Tk):
         menubar = tk.Menu(self)
         
         file_menu = tk.Menu(menubar, tearoff=0)
-        #file_menu.add_command(label="Open", command=self.selectFilesAndFolders, accelerator="Ctrl+O")
-        file_menu.add_command(label="Save", command=self.saveState, accelerator="Ctrl+S")
-        file_menu.add_command(label="Save as", command=self.saveStateAs, accelerator="Ctrl+Shift+S")
-        #file_menu.add_command(label="New", command=self.startFresh, accelerator="Ctrl+N")
+        file_menu.add_command(label="Open", command=lambda: self.current_frame.retrieveData(), accelerator="Ctrl+O")
+        file_menu.add_command(label="Save", command=lambda: self.current_frame.saveData(), accelerator="Ctrl+S")
+        file_menu.add_command(label="Save as", command=lambda: self.current_frame.saveDataAs(), accelerator="Ctrl+Shift+S")
+        file_menu.add_command(label="New", command=lambda event: self.current_frame.clearTable(), accelerator="Ctrl+N")
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.closeWindow, accelerator="Esc")
         menubar.add_cascade(label="File", menu=file_menu)
@@ -89,13 +95,13 @@ class FinanceTracker(tk.Tk):
         #self.bind("<Control-k>",)
         #self.bind("<Control-l>")
         #self.bind("<Control-m>",)
-        #self.bind("<Control-n>", lambda event: self.startFresh())
-        #self.bind("<Control-o>", lambda event: self.selectFilesAndFolders())
+        self.bind("<Control-n>", lambda event: self.current_frame.clearTable())
+        self.bind("<Control-o>", lambda event: self.current_frame.retrieveData())
         #self.bind("<Control-p>",)
         #self.bind("<Control-q>",)
         #self.bind("<Control-r>", lambda event: self.reloadData())
-        self.bind("<Control-s>", lambda event: self.saveState())
-        self.bind("<Control-S>", lambda event: self.saveStateAs())
+        self.bind("<Control-s>", lambda event: self.current_frame.saveData())
+        self.bind("<Control-S>", lambda event: self.current_frame.saveDataAs())
         #self.bind("<Control-t>",)
         #self.bind("<Control-u>", lambda event: self.updateData())
         #self.bind("<Control-v>",)
@@ -120,11 +126,30 @@ class FinanceTracker(tk.Tk):
         #        self.saveState()
         self.destroy()
         
-    def saveState(self):
-        SaveFiles.saveState(self.last_saved_file, self.income_data, self.expenses_data, self.starting_data)
-        
-    def saveStateAs(self):
-        SaveFiles.saveStateAs(self.income_data, self.expenses_data, self.starting_data)
+    def readSaveFile(self):
+        with open(self.save_file_loc, 'r') as f:
+            save_file = f.readlines()
+            
+        return save_file[0]
+    
+    def loadUserSettings(self):
+        """Loads saved user settings from file and applies them dynamically."""
+        try:
+            with open("user_settings.pkl", "rb") as f:
+                settings = pickle.load(f)
+                for key, value in settings.items():
+                    setattr(StyleConfig, key, value)
+    
+        except FileNotFoundError:
+            # No previous settings, load defaults dynamically
+            for key, value in StyleConfig.get_default_settings().items():
+                setattr(StyleConfig, key, value)
+                
+        if hasattr(self, 'current_frame') and isinstance(self.current_frame, Dashboard):
+            self.current_frame.applyStyleChanges()  # Reapply styles to UI elements
+
+
+
         
         
 if __name__ == "__main__":

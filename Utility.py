@@ -92,198 +92,6 @@ class Utility:
         """
         new_day = day.split("-")
         return datetime(int(new_day[0]), int(new_day[1]), int(new_day[2])).strftime("%Y-%m-%d")
-    
-class SaveFiles:
-    @staticmethod
-    def saveState(save_file:str, inc_data: pd.DataFrame, exp_data: pd.DataFrame, init_data: pd.DataFrame) -> None:
-        """
-        Saves financial data based on the last saved file format.
-    
-        - If the last saved file is a `.pkl`, saves as a Pickle file.
-        - If the last saved file is a `.xlsx`, saves as an Excel file.
-        - If the last saved file is in CSV format (5 lines), saves as CSV.
-        - If no valid file is found, prompts the user.
-        
-        Parameters:
-            save_file (str) - the full-length path of the file to save
-            inc_data (pd.DataFrame): dataframe of income data
-            exp_data (pd.DataFrame): dataframe of expenses data
-            init_data (pd.DataFrame): dataframe of initial values
-        
-        Retuns:
-            None
-        """ 
-        
-        try:
-            with open(save_file, 'r') as ff:
-                file_lines = ff.readlines()
-    
-            if len(file_lines) == 1:
-                file_name = file_lines[0].strip()
-                if file_name.endswith(".pkl"):
-                    SaveFiles.saveToPickleFile(file_name, inc_data, exp_data, init_data)
-                elif file_name.endswith(".xlsx"):
-                    SaveFiles.saveToXLSX(file_name, inc_data, exp_data, init_data)
-            elif len(file_lines) == 5:
-                SaveFiles.saveToCSV(file_lines, inc_data, exp_data, init_data)
-            else:
-                messagebox.showinfo("Message", "No data to save")
-        except FileNotFoundError:
-            messagebox.showinfo("Message", "No previously saved file found.")
-            
-    def saveStateAs(inc_data: pd.DataFrame, exp_data: pd.DataFrame, init_data: pd.DataFrame) -> None:
-        """
-        Saves financial data with user-specified file format.
-    
-        Prompts the user to select a save location and file format (`.xlsx`, `.pkl`, `.csv`).
-        
-        Parameters:
-            inc_data (pd.DataFrame): dataframe of income data
-            exp_data (pd.DataFrame): dataframe of expenses data
-            init_data (pd.DataFrame): dataframe of initial values
-        
-        Retuns:
-            None
-        """
-        filetypes = [
-            ("Excel Files", "*.xlsx"),
-            ("Pickle Files", "*.pkl"),
-            ("CSV Files", "*.csv"),
-        ]
-        
-        file_name = filedialog.asksaveasfilename(
-            title="Select Files",
-            filetypes=filetypes,
-            defaultextension=".xlsx"
-        )
-    
-        if file_name:
-            if file_name.endswith(".pkl"):
-                SaveFiles.saveToPickleFile(file_name, inc_data, exp_data, init_data)
-            elif file_name.endswith(".xlsx"):
-                SaveFiles.saveToXLSX(file_name, inc_data, exp_data, init_data)
-            elif file_name.endswith(".csv"):
-                SaveFiles.saveToCSV(file_name, inc_data, exp_data, init_data)
-        else:
-            messagebox.showinfo("Message", "No saved file chosen.")        
-    
-    def saveToXLSX(file_name: str, inc_data: pd.DataFrame, exp_data: pd.DataFrame, init_data: pd.DataFrame) -> None:
-        """
-        Saves financial data to an Excel (.xlsx) file.
-    
-        Parameters:
-            file_name (str): The file path for saving.
-            inc_data (pd.DataFrame): dataframe of income data
-            exp_data (pd.DataFrame): dataframe of expenses data
-            init_data (pd.DataFrame): dataframe of initial values
-        
-        Retuns:
-            None
-        """
-        data_frames = [inc_data, exp_data, init_data]
-        sheet_names = ['Income', 'Expenses', 'Starting Balance']
-    
-        try:
-            with pd.ExcelWriter(file_name) as writer:
-                for df, sheet_name in zip(data_frames, sheet_names):
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
-    
-            messagebox.showinfo("File Saved", f"Data successfully saved to \n{file_name}")
-            SaveFiles.updateLastSavedFile(file_name)
-    
-        except Exception as e:
-            messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}\n\n{str(e)}")
-    
-    def saveToCSV(file_name: Union[str, List[str]], inc_data: pd.DataFrame, exp_data: pd.DataFrame, init_data: pd.DataFrame) -> None:
-        """
-        Saves financial data to CSV files.
-    
-        If the provided file name is a list (legacy behavior), extracts the directory and base name from the first item.
-    
-        Parameters:
-            file_name (str): The file path or list of file paths.
-            inc_data (pd.DataFrame): dataframe of income data
-            exp_data (pd.DataFrame): dataframe of expenses data
-            init_data (pd.DataFrame): dataframe of initial values
-        
-        Returns:
-            None
-        """
-        
-        try:
-            if type(file_name) == str:
-                dir_base = "/".join(file_name.split("/")[:-1])
-                file_base = file_name.split("/")[-1].split(".")[0]
-            else:
-                dir_base = "/".join(file_name[0].split("/")[:-1])
-                file_base = file_name[0].split("/")[-1].split("_")[0]
-            
-            list_dfs = [inc_data, exp_data, init_data]
-            type_names = ['Income', 'Expenses', 'Starting Balance']
-            file_names = []
-            
-            try:
-                for idx, df in enumerate(list_dfs):
-                    file_path = os.path.join(dir_base, file_base + "_" + type_names[idx] + ".csv")
-                    df.to_csv(file_path, index=False)
-                    file_names.append(file_path)
-                    
-                all_file_names = "\n\n".join(file_names)
-                messagebox.showinfo("Files Saved", f"Data successfully saved to \n\n{all_file_names}")
-                
-                SaveFiles.updateLastSavedFile(all_file_names)
-                
-            except:
-                messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}")     
-    
-        except Exception as e:
-            messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}\n\n{str(e)}")
-        
-    def saveToPickleFile(file_name: str, inc_data: pd.DataFrame, exp_data: pd.DataFrame, init_data: pd.DataFrame) -> None:
-        """
-        Saves financial data to a Pickle (.pkl) file.
-    
-        Parameters:
-            file_name (str): The file path for saving.
-            inc_data (pd.DataFrame): dataframe of income data
-            exp_data (pd.DataFrame): dataframe of expenses data
-            init_data (pd.DataFrame): dataframe of initial values
-        
-        Returns:
-            None
-        """
-        yearly_data = {
-            'Income': inc_data,
-            'Expenses': exp_data,
-            'Initial': init_data,
-        }
-    
-        try:
-            with open(file_name, "wb") as f:
-                pickle.dump(yearly_data, f)
-    
-            messagebox.showinfo("File Saved", f"Data successfully saved to \n{file_name}")
-            SaveFiles.updateLastSavedFile(file_name)
-    
-        except Exception as e:
-            messagebox.showinfo("File Not Saved", f"Error - Data not saved to \n{file_name}\n\n{str(e)}")
-            
-    def updateLastSavedFile(file_name):
-        """
-        Updates the record of the last saved file.
-    
-        Parameters:
-            file_name: The file path that was last successfully saved.
-        
-        Results:
-            None
-        """
-        save_file_location = os.path.join(os.path.dirname(__file__), "lastSavedFile.txt")
-        try:
-            with open(save_file_location, "w") as f:
-                f.write(file_name)
-        except Exception as e:
-            messagebox.showinfo("Error", f"Could not update last saved file: \n\n{str(e)}") 
             
 class Windows:
     @staticmethod
@@ -363,16 +171,14 @@ class Tables:
         # Reverse sort next time
         tv.heading(col, command=lambda: Tables.sortTableByColumn(tv, col, not reverse))
         
-    def applyBandedRows(tv):
+    def applyBandedRows(tv, c1, c2):
         """Recolors Treeview rows to maintain alternating row stripes after sorting."""
         for index, row in enumerate(tv.get_children('')):
             tag = "evenrow" if index % 2 == 0 else "oddrow"
             tv.item(row, tags=(tag,))
-            
-            #TODO TOTAL ROW
     
         # Define colors for tags
-        tv.tag_configure("evenrow", background=StyleConfig.BANDED_ROWS[0])
-        tv.tag_configure("oddrow", background=StyleConfig.BANDED_ROWS[1]) 
+        tv.tag_configure("evenrow", background=c1)
+        tv.tag_configure("oddrow", background=c2) 
         
         

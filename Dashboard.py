@@ -2,9 +2,11 @@ import os
 import pandas as pd
 import numpy as np
 import pickle
+import importlib
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, PhotoImage
+from tkinter import ttk, filedialog, messagebox, PhotoImage, font
+import tkinter.colorchooser as colorchooser
 from PIL import Image, ImageTk
 from tkcalendar import Calendar
 
@@ -24,7 +26,7 @@ from datetime import datetime, timedelta
 
 from typing import List, Tuple, Union
 
-from Utility import Utility, SaveFiles, Tables, Windows
+from Utility import Utility, Tables, Windows
 from StyleConfig import StyleConfig
 
 
@@ -395,6 +397,26 @@ class DataManager:
         merged_df = pd.concat([df1, df2], ignore_index=True).drop(columns=['Index'], errors='ignore')
         
         return merged_df 
+    @staticmethod
+    def saveDataAs(df:pd.DataFrame, new_file: str) -> str:
+        """Exports the transaction table to CSV or Excel."""
+        if new_file == '':
+            file_path = filedialog.asksaveasfilename(defaultextension=".xlsx",
+                                                     filetypes=[("Excel files", "*.xlsx"),
+                                                                 ("CSV files", "*.csv")])
+            if not file_path:
+                return
+        else:
+            file_path = new_file
+    
+        if file_path.endswith(".csv"):
+            df.to_csv(file_path, index=False)
+        else:
+            df.to_excel(file_path, index=False)
+    
+        messagebox.showinfo("Export Complete", f"Data saved to {file_path}")  
+        
+        return file_path
 
 class TransactionManager:            
     @staticmethod     
@@ -614,7 +636,7 @@ class Dashboard(tk.Frame):
         self.categories = sorted(self.categories)
         
         self.createWidgets()  # Initialize UI elements
-      
+
     def createWidgets(self):
         """Creates and places all main widgets for the dashboard."""
         
@@ -702,7 +724,7 @@ class Dashboard(tk.Frame):
         self.separators = []
         self.images = {}
         
-        self.button_separators = [3, 5, 7]
+        self.button_separators = [3, 5, 7, 9]
         
         self.buttons = []
         button_data = [
@@ -712,11 +734,14 @@ class Dashboard(tk.Frame):
             ("Retrieve",    "retrieve.png", self.retrieveData),
             ("Payee",       "payee.png",    self.viewPayees),
             ("Category",    "category.png", self.viewCategories),
-            ("Banking",    "account.png",  self.chooseAccounts),
-            ("Stocks",      "stonks.png",   self.chooseAccounts),
+            ("Banking",     "account.png",  lambda: self.filterByAccountType("Banking")),
+            ("Stocks",      "stonks.png",   lambda: self.filterByAccountType("Investments")),
             ("Budget",      "budget.png",   self.viewBudget),
+            ("Export",      "export.png",   self.saveDataAs),
             ("Options",     "options.png",  self.viewOptions),
         ]
+        
+        btn_size = 50  
         
         for index, (text, icon, command) in enumerate(button_data):
             img_path = os.path.join(self.button_image_loc, icon)
@@ -725,14 +750,154 @@ class Dashboard(tk.Frame):
             self.images[icon] = ImageTk.PhotoImage(img)
             
             try:
-                btn = ttk.Button(self.toolbar, text=text, image=self.images[icon], compound=tk.TOP, command=command, width=8)
+                btn = tk.Button(self.toolbar, 
+                                text=text, 
+                                image=self.images[icon], 
+                                compound=tk.TOP, 
+                                command=command, 
+                                width=btn_size, 
+                                height=btn_size, 
+                                bg='white', 
+                                relief=tk.RAISED)
             except:
-                btn = ttk.Button(self.toolbar, text=text, command=command, width=8)
+                btn = tk.Button(self.toolbar, 
+                                text=text, 
+                                compound=tk.TOP, 
+                                command=command, 
+                                width=btn_size, 
+                                height=btn_size, 
+                                bg='white', 
+                                relief=tk.RAISED)
+                
             btn.pack(side=tk.LEFT, padx=4, pady=2)
             self.buttons.append(btn)
             
             if index in self.button_separators:
                 ttk.Separator(self.toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
+                
+        # Search Bar
+        search_label = ttk.Label(self.toolbar, text="Search:")
+        search_label.pack(side=tk.LEFT, padx=5)
+        
+        self.search_entry = ttk.Entry(self.toolbar, width=30)
+        self.search_entry.pack(side=tk.LEFT, padx=5)
+        self.search_entry.bind("<Return>", lambda event: self.searchTransactions())
+        
+        search_button = ttk.Button(self.toolbar, text="Go", command=self.searchTransactions)
+        search_button.pack(side=tk.LEFT, padx=5)
+        
+        adv_search_button = ttk.Button(self.toolbar, text="Advanced Search", command=self.openAdvancedSearch)
+        adv_search_button.pack(side=tk.LEFT, padx=5)
+        
+    def filterByAccountType(self, account_type):
+        """Filters transactions based on account type (Banking or Investment)."""
+        
+        # Ensure all_data exists before filtering
+        if not hasattr(self.master, "all_data") or self.master.all_data.empty:
+            messagebox.showwarning("Warning", "No data available to filter!")
+            return
+    
+        filtered_df = self.master.all_data[self.master.all_data["Account Type"] == account_type]
+        self.updateTable(filtered_df)
+        
+    def searchTransactions(self):
+        """Filters transactions based on user input, including numbers."""
+        query = self.search_entry.get().strip().lower()
+    
+        if not query:
+            self.updateTable(self.master.all_data)  # Reset table if empty search
+            return
+    
+        def match_query(row):
+            """Checks if the query exists in any column, including numeric columns."""
+            for col in row.index:
+                cell_value = str(row[col]).lower()
+    
+                if col in ["Payment", "Deposit", "Balance"]:  # Convert numeric values
+                    try:
+                        num_val = float(row[col]) / 100  # Convert cents to dollars
+                        if query.replace("$", "").replace(",", "").isdigit():
+                            if float(query) == num_val:
+                                return True
+                    except ValueError:
+                        continue
+    
+                if query in cell_value:
+                    return True
+    
+            return False
+    
+        filtered_df = self.master.all_data[self.master.all_data.apply(match_query, axis=1)]
+        self.updateTable(filtered_df)
+        
+    def openAdvancedSearch(self):
+        """Opens a compact, well-structured window for advanced transaction searches."""
+        
+        # Ensure all_data exists before filtering
+        if not hasattr(self.master, "all_data") or self.master.all_data.empty:
+            messagebox.showwarning("Warning", "No data to search!")
+            return
+        
+        search_window = tk.Toplevel(self)
+        search_window.title("Advanced Search")
+        search_window.geometry("300x370")
+        search_window.resizable(False, False)
+    
+        ttk.Label(search_window, text="Advanced Search", font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE, "bold")).pack(pady=5)
+    
+        # Frame to neatly arrange labels and entry boxes
+        input_frame = ttk.Frame(search_window)
+        input_frame.pack(fill="both", expand=True, padx=10, pady=5)
+    
+        search_entries = {}  # Store entry fields for each column
+    
+        # Create labeled entry fields for each column
+        for column in self.master.all_data.columns:
+            row_frame = ttk.Frame(input_frame)
+            row_frame.pack(fill="x", pady=2)
+    
+            label = ttk.Label(row_frame, text=f"{column}:", width=12, anchor="w", font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE, "bold"))
+            label.pack(side=tk.LEFT)
+    
+            entry = ttk.Entry(row_frame, width=15)
+            entry.pack(side=tk.RIGHT, expand=True, fill="x")
+            search_entries[column] = entry
+    
+        def performAdvancedSearch(event=None):
+            """Filters transactions based on entered search values."""
+            filtered_df = self.master.all_data.copy()
+    
+            for col, entry in search_entries.items():
+                search_value = entry.get().strip().lower()
+    
+                if not search_value:
+                    continue  # Skip empty fields
+    
+                if col in ["Payment", "Deposit", "Balance"]:  # Handle numeric columns
+                    try:
+                        search_value = float(search_value.replace("$", "").replace(",", ""))
+                        filtered_df = filtered_df[filtered_df[col] / 100 == search_value]
+                    except ValueError:
+                        messagebox.showwarning("Warning", f"Invalid numeric value for {col}", parent=search_window)
+                        return
+                else:  # Text-based search
+                    filtered_df = filtered_df[filtered_df[col].astype(str).str.lower().str.contains(search_value, na=False)]
+    
+            self.updateTable(filtered_df)
+            closeWindow()
+            
+        def closeWindow(event=None):
+            search_window.destroy()
+    
+        # Search button
+        search_button = ttk.Button(search_window, text="Search", command=performAdvancedSearch)
+        search_button.pack(pady=10)
+        
+        # Bind keys
+        search_window.bind("<Return>", performAdvancedSearch)
+        search_window.bind("<Escape>", closeWindow)
+        
+        search_window.focus_force()
         
     def createTransactionTable(self):
         """Creates the transaction table with scrolling."""
@@ -917,7 +1082,7 @@ class Dashboard(tk.Frame):
             entry_widget.bind("<Tab>", lambda e: saveEdit(entry_widget.get()))
             entry_widget.bind("<FocusOut>", cancelEdit)
             
-        elif col_name in ["Category", "Account"]:
+        elif col_name in ["Category", "Account", "Account Type"]:
             x, y, width, height = self.tree.bbox(item, column)  # Get cell coordinates
             
             # Create Dropdown List
@@ -930,6 +1095,9 @@ class Dashboard(tk.Frame):
             elif col_name == "Account":
                 accounts = self.master.all_data["Account"].unique().tolist()
                 dropdown["values"] = accounts
+                
+            elif col_name == "Account Type":
+                dropdown["values"] = ['Banking', 'Investments']
     
             dropdown.set(current_value)
             dropdown.bind("<<ComboboxSelected>>", lambda e: saveEdit(dropdown.get()))
@@ -959,12 +1127,171 @@ class Dashboard(tk.Frame):
         """Placeholder for deleting a transaction."""
         print("View Budget")
         
-    def viewOptions(self):
-        """Placeholder for deleting a transaction."""
-        print("View Options")
+    def saveDataAs(self, event=None):
+        """Placeholder for exporting data."""
+        save_file = DataManager.saveDataAs(self.master.all_data.copy(), new_file = '')
+        
+        if save_file != None:
+            with open(self.master.save_file_loc, 'w') as f:
+                f.write(save_file)
+            self.master.save_file = save_file
+            
+    def saveData(self, event=None):
+        """Placeholder for exporting data."""
+        _ = DataManager.saveDataAs(self.master.all_data.copy(), new_file = self.master.save_file)
+     
+    def viewOptions(self, new_settings=True):
+        """Opens a window to adjust application settings like fonts, colors, and sizes."""
+        options_window = tk.Toplevel(self)
+        options_window.title("Application Settings")
+        options_window.resizable(False, False)
+    
+        ttk.Label(options_window, text="Customize Appearance", font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")).pack(pady=5)
+    
+        if new_settings:
+            # Dictionary to store new settings
+            self.temp_settings = {
+                "FONT_FAMILY": tk.StringVar(value=StyleConfig.FONT_FAMILY),
+                "FONT_SIZE": tk.IntVar(value=StyleConfig.FONT_SIZE),
+                "HEADING_FONT_SIZE": tk.IntVar(value=StyleConfig.HEADING_FONT_SIZE),
+                "BUTTON_FONT_SIZE" : tk.IntVar(value=StyleConfig.BUTTON_FONT_SIZE),
+                "ROW_HEIGHT": tk.IntVar(value=StyleConfig.ROW_HEIGHT),
+                "BG_COLOR": tk.StringVar(value=StyleConfig.BG_COLOR),
+                "HEADER_COLOR": tk.StringVar(value=StyleConfig.HEADER_COLOR),
+                "BUTTON_COLOR": tk.StringVar(value=StyleConfig.BUTTON_COLOR),
+                "BAND_COLOR_1": tk.StringVar(value=StyleConfig.BAND_COLOR_1),
+                "BAND_COLOR_2": tk.StringVar(value=StyleConfig.BAND_COLOR_2),
+            }
+            
+        win_height = len(self.temp_settings.keys()) * 30 + 90
+         
+        options_window.geometry(f"260x{win_height}")   
+    
+        def pickColor(var, entry_widget):
+            """Opens the color chooser asynchronously and updates the entry field."""
+            options_window.lift()  # Bring options window to the front (optional)
+            
+            # Use `after()` to open colorchooser asynchronously
+            def openColorChooser():
+                color_code = colorchooser.askcolor(title="Choose a Color")[1]  # Get hex value
+                if color_code:
+                    var.set(color_code)  # Update the variable
+                    entry_widget.delete(0, tk.END)
+                    entry_widget.insert(0, color_code)  # Update the entry field dynamically
+                    
+                self.viewOptions(new_settings=False)
+        
+            options_window.after(10, openColorChooser)  # Open color chooser without blocking
+    
+        # Function to create labeled settings row
+        def createSettingRow(label, var, parent, options=None, is_color=False):
+            frame = ttk.Frame(parent)
+            frame.pack(fill="x", padx=10, pady=2)
+    
+            ttk.Label(frame, text=label, width=20, anchor="w").pack(side=tk.LEFT)
+    
+            if is_color:
+                entry = ttk.Entry(frame, textvariable=var, width=10)
+                entry.pack(side=tk.LEFT, padx=5)
+            
+                color_button = ttk.Button(frame, text="🎨", width=3, command=lambda: pickColor(var, entry))
+                color_button.pack(side=tk.LEFT)
+            elif isinstance(var, tk.StringVar) and not options:
+                entry = ttk.Entry(frame, textvariable=var, width=15)
+                entry.pack(side=tk.RIGHT, fill="x", expand=True)
+            elif isinstance(var, tk.IntVar):
+                entry = ttk.Spinbox(frame, textvariable=var, from_=8, to=30, width=5)
+                entry.pack(side=tk.RIGHT, fill="x", expand=True)
+            elif options:
+                dropdown = ttk.Combobox(frame, textvariable=var, values=options, state="readonly", width=15)
+                dropdown.pack(side=tk.RIGHT, fill="x", expand=True)
+    
+        # Create settings fields
+        createSettingRow("Font Family:", self.temp_settings["FONT_FAMILY"], options_window, sorted(list(font.families())))
+        createSettingRow("Font Size:", self.temp_settings["FONT_SIZE"], options_window)
+        createSettingRow("Header Font Size:", self.temp_settings["HEADING_FONT_SIZE"], options_window)
+        createSettingRow("Button Font Size:", self.temp_settings["BUTTON_FONT_SIZE"], options_window)
+        createSettingRow("Row Height:", self.temp_settings["ROW_HEIGHT"], options_window)
+        createSettingRow("Background Color:", self.temp_settings["BG_COLOR"], options_window, is_color=True)
+        createSettingRow("Header Color:", self.temp_settings["HEADER_COLOR"], options_window, is_color=True)
+        createSettingRow("Button Color:", self.temp_settings["BUTTON_COLOR"], options_window, is_color=True)
+        createSettingRow("Band Color 1:", self.temp_settings["BAND_COLOR_1"], options_window, is_color=True)
+        createSettingRow("Band Color 2:", self.temp_settings["BAND_COLOR_2"], options_window, is_color=True)
+        
+        def resetToStandard():
+            """Resets all settings to their default values dynamically from StyleConfig."""
+    
+            # Retrieve the default values
+            default_settings = StyleConfig.getDefaultSettings()
+        
+            # Apply the default settings dynamically
+            for key, value in default_settings.items():
+                setattr(StyleConfig, key, value)
+        
+            self.applyStyleChanges()  # Apply the updated styles to the UI
+            closeWindow()
+    
+        def applyChanges():
+            """Applies settings dynamically without modifying StyleConfig.py"""
+            for key, var in self.temp_settings.items():
+                setattr(StyleConfig, key, var.get())
+    
+            self.applyStyleChanges()
+            saveUserSettings()  # Save user settings to file
+            closeWindow()
+    
+        # Save settings function
+        def saveUserSettings():
+            with open("user_settings.pkl", "wb") as f:
+                pickle.dump({key: var.get() for key, var in self.temp_settings.items()}, f)
+                
+        def closeWindow(event=None):
+            options_window.destroy()
+    
+        # Buttons Frame
+        button_frame = ttk.Frame(options_window)
+        button_frame.pack(pady=10)
+    
+        apply_button = ttk.Button(button_frame, text="Apply", command=applyChanges)
+        apply_button.grid(row=0, column=0, padx=5, pady=5)
+    
+        standard_button = ttk.Button(button_frame, text="Standard Options", command=resetToStandard)
+        standard_button.grid(row=1, column=0, columnspan=2, padx=5, pady=5)
+    
+        cancel_button = ttk.Button(button_frame, text="Cancel", command=closeWindow)
+        cancel_button.grid(row=0, column=1, padx=5, pady=5)
+        
+        # Bind keys
+        options_window.bind("<Return>", applyChanges)
+        options_window.bind("<Escape>", closeWindow)
+        
+        options_window.focus_force()
+        
+    def applyStyleChanges(self):
+        """Applies the updated style settings dynamically."""
+    
+        # Update Treeview row height using ttk.Style
+        style = ttk.Style()
+        style.configure("Treeview", 
+                        rowheight=StyleConfig.ROW_HEIGHT, 
+                        font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE))
+        
+        style.configure("Treeview.Heading", 
+                    font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE, "bold"))
+    
+        # Update alternating row colors (banded rows)
+        Tables.applyBandedRows(self.tree, StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2)
+        
+        # Update toolbar buttons
+        for btn in self.buttons:
+            btn.config(bg=StyleConfig.BUTTON_COLOR)
+            btn['font'] = StyleConfig.FONT_FAMILY + " " + str(StyleConfig.BUTTON_FONT_SIZE)
+    
+        # Update background color of the main frame and toolbar
+        self.configure(bg=StyleConfig.BG_COLOR)
         
     def updateTable(self, df:pd.DataFrame) -> None:
-        """test"""
+        """comment"""
         
         # Clear existing data in the table
         for row in self.tree.get_children():
@@ -989,8 +1316,8 @@ class Dashboard(tk.Frame):
             formatted_row[6] = f"${row['Balance'] / 100:.2f}"  # Format 'Balance'
             
             self.tree.insert("", tk.END, values=formatted_row)
-            
-        Tables.applyBandedRows(self.tree)
+
+        Tables.applyBandedRows(self.tree, StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2)
         
         # Update accounts listbox
         self.updateBankingAccountsToolbox(df)
@@ -1002,7 +1329,7 @@ class Dashboard(tk.Frame):
      
         # Filter only banking accounts
         banking_df = df[df["Account Type"] == "Banking"]
-     
+
         # Calculate account balances
         self.account_balances = DataFrameProcessor.accountBalance(banking_df)
      
@@ -1064,5 +1391,19 @@ class Dashboard(tk.Frame):
         
         self.updateTable(filtered_df)  # Update table with filtered results
         
+    def clearTable(self, event=None):
+        """comment"""
         
+        if not self.master.all_data.empty:
+            confirm = messagebox.askyesno("Confirm Delete", 
+                                          "Are you sure you want to delete all transaction(s)?")
+            
+            if confirm is None or not confirm:  # Explicitly check for None
+                return  # User canceled or closed the dialog, so exit
+            
+            if confirm:
+                self.master.all_data = pd.DataFrame()
+                self.accounts_list.delete(0, tk.END)
+                self.investments_list.delete(0, tk.END)
+                self.tree.delete(*self.tree.get_children())
     
