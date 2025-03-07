@@ -147,7 +147,7 @@ class Tables:
         """
         tree.delete(*tree.get_children())
         
-    def sortTableByColumn(tv:ttk.Treeview, col: 'str', reverse: bool) -> None:
+    def sortTableByColumn(tv:ttk.Treeview, col: 'str', reverse: bool, colors: List) -> None:
         """Sorts a Treeview column properly, handling currency values and reapplying row colors."""
 
         def convertValue(val):
@@ -166,10 +166,10 @@ class Tables:
             tv.move(k, '', index)
     
         # Reapply banded row styling
-        #Tables.applyBandedRows(tv)
+        Tables.applyBandedRows(tv, colors=colors)
     
         # Reverse sort next time
-        tv.heading(col, command=lambda: Tables.sortTableByColumn(tv, col, not reverse))
+        tv.heading(col, command=lambda: Tables.sortTableByColumn(tv, col, not reverse, colors))
         
     def applyBandedRows(tv: ttk.Treeview, colors: list[str, str]) -> None:
         """Recolors Treeview rows to maintain alternating row stripes after sorting."""

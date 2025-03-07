@@ -58,6 +58,7 @@ class StyleConfig:
             "BUTTON_PADDING":       5,
             "BUTTON_BORDER_RADIUS": 10,
             "DARK_MODE":            False,
+            "DATE_FORMAT":          "%Y-%m-%d",
         }
     
     @classmethod

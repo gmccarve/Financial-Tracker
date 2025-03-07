@@ -47,9 +47,9 @@ class DataFrameProcessor:
         - pd.DataFrame: Updated DataFrame with 'Index' as the first column.
         """
         df = df.reset_index(drop=True)  # Reset index to start fresh
-        if 'Number' in df.columns:
-            df = df.drop(columns=['Number'])
-        df.insert(0, 'Number', df.index)
+        if 'No.' in df.columns:
+            df = df.drop(columns=['No.'])
+        df.insert(0, 'No.', df.index)
         return df
     @staticmethod 
     def convertCurrency(df: pd.DataFrame) -> pd.DataFrame:
@@ -166,7 +166,7 @@ class DataFrameProcessor:
     
         # Compute alternative balance where latest balance is zero
         computed_balances = df.groupby("Account").agg({"Deposit": "sum", "Payment": "sum"})
-        computed_balances = computed_balances["Deposit"] - computed_balances["Payment"]  # Convert to Series
+        computed_balances = abs(computed_balances["Deposit"]) - abs(computed_balances["Payment"])  # Convert to Series
     
         # Use the latest balance unless it's zero, then use computed balance
         final_balances = latest_balances.mask(latest_balances == 0, computed_balances)
@@ -221,7 +221,8 @@ class DataManager:
                         "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/Capital One Credit.csv",
                         "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Checking.csv",
                         "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Credit.csv",
-                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Savings.csv"]        
+                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Savings.csv"
+                        ]        
         
         if not file_paths:
             return [] # User cancelled file selection  
@@ -272,10 +273,10 @@ class DataManager:
             if keyword.lower() in account_name.lower():
                 account_type = "Banking"
                 break
-        
+
         # Normalize column headers
         header_mapping = {
-            "Transaction ID": "Number",
+            "Transaction ID": "No.",
             "Transaction Date": "Date",
             "Description": "Payee",
             "Amount": "Payment",
@@ -321,11 +322,38 @@ class DataManager:
         # Assign account name and type
         df['Account'] = account_name
         df['Account Type'] = account_type
-
+        
+        # Categorize the account based on Payment, Deposit, and Balance values
+        if (
+            (df["Payment"] <= 0.00).all() and
+            (df["Deposit"] >= 0.00).all() and
+            (df["Balance"] == 0.00).all()
+        ):
+            case = 2
+        elif (
+            (df["Payment"] >= 0.00).all() and
+            (df["Deposit"] <= 0.00).all() and
+            (df["Balance"] == 0.00).all()
+        ):
+            case = 3
+        elif (
+            (df["Payment"] >= 0.00).all() and
+            (df["Deposit"] >= 0.00).all() and
+            (df["Balance"] == 0.00).all()
+        ):
+            case = 4
+        elif (
+            (df["Payment"] >= -999999.00).all() and 
+            (df["Deposit"] == 0.00).all()
+        ):
+            case = 5
+        else:
+            case = 6
+    
         # Select only the relevant columns in the correct order
         df = df[expected_headers]
   
-        return df       
+        return df, case    
     @staticmethod     
     def updateData() -> None:
         """
@@ -487,10 +515,10 @@ class TransactionManager:
         
             # Convert stored values to DataFrame
             new_df = pd.DataFrame([stored_values])
-            new_df = DataManager.parseNewDF(new_df, stored_values.get("Account", "Unknown"), dashboard)
+            new_df, _ = DataManager.parseNewDF(new_df, stored_values.get("Account", "Unknown"), dashboard)
         
             # Ensure proper data type conversion
-            for col in ["Number", "Payment", "Deposit", "Balance"]:
+            for col in ["No.", "Payment", "Deposit", "Balance"]:
                 if col in new_df.columns:
                     new_df[col] = pd.to_numeric(new_df[col], errors='coerce').fillna(0).astype(int)  # Convert to int
 
@@ -500,7 +528,7 @@ class TransactionManager:
                 selected_number = int(dashboard.tree.item(selected_items[0], "values")[0])  # Convert to int for index matching
         
                 # Find the index of the selected transaction in all_data
-                index_to_update = dashboard.master.all_data[dashboard.master.all_data["Number"] == selected_number].index
+                index_to_update = dashboard.master.all_data[dashboard.master.all_data["No."] == selected_number].index
         
                 if not index_to_update.empty:
                     # Ensure new_df has the same columns as all_data before assignment
@@ -566,7 +594,12 @@ class TransactionManager:
     
             entry_fields[column] = entry
     
-        submit_button = tk.Button(transaction_window, text="Submit", command=submitTransaction)
+        submit_button = tk.Button(transaction_window, 
+                                  text="Submit", 
+                                  command=submitTransaction,
+                                  bg=StyleConfig.BUTTON_COLOR, 
+                                  fg=StyleConfig.TEXT_COLOR, 
+                                  relief=StyleConfig.BUTTON_STYLE)
         submit_button.grid(row=len(columns), column=0, columnspan=2, pady=10)
     
         submit_button.focus_set()
@@ -582,7 +615,7 @@ class TransactionManager:
         selected_numbers = [dashboard.tree.item(item, "values")[0] for item in selected_items]
         selected_numbers = set(map(int, selected_numbers))
     
-        indices_to_drop = dashboard.master.all_data[dashboard.master.all_data["Number"].isin(selected_numbers)].index
+        indices_to_drop = dashboard.master.all_data[dashboard.master.all_data["No."].isin(selected_numbers)].index
     
         confirm = messagebox.askyesno("Confirm Delete", 
                                       f"Are you sure you want to delete {len(indices_to_drop)} transaction(s)?", 
@@ -594,9 +627,6 @@ class TransactionManager:
         dashboard.master.all_data = DataFrameProcessor.getDataFrameIndex(dashboard.master.all_data)
     
         dashboard.updateTable(dashboard.master.all_data)
-                    
-
-#TODO RELATIVE WINDOW OPENINGS
     
 class Dashboard(tk.Frame):
     def __init__(self, master):
@@ -607,8 +637,8 @@ class Dashboard(tk.Frame):
         
         # Define column widths for transaction table
         self.banking_column_widths = {
-            "Number": 35,
-            "Date": 50,
+            "No.": 30,
+            "Date": 60,
             "Payee": 350,
             "Category": 200,
             "Payment": 80,
@@ -620,8 +650,8 @@ class Dashboard(tk.Frame):
         }
         
         self.investment_column_widths = {
-            "Number": 35,
-            "Date": 50,
+            "No.": 30,
+            "Date": 60,
             "Payee": 350,
             "Category": 200,
             "Gain": 80,
@@ -632,7 +662,8 @@ class Dashboard(tk.Frame):
             "Account Type": 100
         }
         
-        self.account_balances = {}
+        self.initial_account_balances = {}
+        self.account_cases = {}
         
         self.category_file = os.path.join(os.path.dirname(__file__), "Categories.txt")
         self.getCategories()
@@ -674,7 +705,7 @@ class Dashboard(tk.Frame):
         self.accounts_listbox_frame.pack(fill="x", padx=5, pady=2)
         
         # Create listbox with a scrollbar
-        self.accounts_list = tk.Listbox(self.accounts_listbox_frame, height=10, width=35)  # Increased width
+        self.accounts_list = tk.Listbox(self.accounts_listbox_frame, height=6, width=35)
         self.accounts_list.pack(side=tk.LEFT, fill='x', expand=True)
     
         # Add scrollbar for smooth scrolling
@@ -700,7 +731,7 @@ class Dashboard(tk.Frame):
         self.investment_listbox_frame.pack(fill="x", padx=5, pady=2)
         
         # Create listbox with a scrollbar
-        self.investments_list = tk.Listbox(self.investment_listbox_frame, height=6, width=35)  # Increased width
+        self.investments_list = tk.Listbox(self.investment_listbox_frame, height=6, width=35)
         self.investments_list.pack(side=tk.LEFT, fill='x', expand=True)
     
         # Add scrollbar for smooth scrolling
@@ -713,6 +744,32 @@ class Dashboard(tk.Frame):
         
         # Bind double-click event to filter transactions
         self.investments_list.bind("<Double-Button-1>", self.filterTransactionsByInvestmentAccount)
+        
+        
+        # Categories Listbox
+        self.category_label = tk.Label(self.sidebar, text="Investment Accounts",
+                                         font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
+                                         bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
+        self.category_label.pack(anchor='center', pady=5)
+    
+        # Add a frame to contain the listbox and scrollbar
+        self.category_listbox_frame = ttk.Frame(self.sidebar)
+        self.category_listbox_frame.pack(fill="x", padx=5, pady=2)
+        
+        # Create listbox with a scrollbar
+        self.category_list = tk.Listbox(self.category_listbox_frame, height=6, width=35)
+        self.category_list.pack(side=tk.LEFT, fill='x', expand=True)
+    
+        # Add scrollbar for smooth scrolling
+        self.category_scrollbar = ttk.Scrollbar(self.category_listbox_frame, orient=tk.VERTICAL, command=self.category_list.yview)
+        self.category_scrollbar.pack(side=tk.RIGHT, fill='y')
+        self.category_list.config(yscrollcommand=self.category_scrollbar.set)
+    
+        # Bind smooth scrolling behavior
+        self.category_list.bind("<MouseWheel>", self.smoothScroll)
+        
+        # Bind double-click event to filter transactions
+        self.category_list.bind("<Double-Button-1>", self.filterTransactionsByCategory)
          
         """     
         ttk.Label(self.sidebar, text="Reports", font=(StyleConfig.FONT_FAMILY, StyleConfig.SUB_FONT_SIZE, "bold")).pack(anchor='w', pady=5)
@@ -735,7 +792,7 @@ class Dashboard(tk.Frame):
         self.separators = []
         self.images = {}
         
-        self.button_separators = [3, 5, 7, 9]
+        self.button_separators = [3, 6, 8, 9]
         
         self.buttons = []
         button_data = [
@@ -743,9 +800,10 @@ class Dashboard(tk.Frame):
             ("Edit",        "edit.png",     self.editTransaction),
             ("Delete",      "delete.png",   self.deleteTransaction),
             ("Retrieve",    "retrieve.png", self.retrieveData),
+            ("Balances",    "accounts.png", self.trackBankBalances),
             ("Payee",       "payee.png",    self.viewPayees),
             ("Category",    "category.png", self.viewCategories),
-            ("Banking",     "account.png",  lambda: self.filterByAccountType("Banking")),
+            ("Banking",     "banking.png",  lambda: self.filterByAccountType("Banking")),
             ("Stocks",      "stonks.png",   lambda: self.filterByAccountType("Investments")),
             ("Budget",      "budget.png",   self.viewBudget),
             ("Export",      "export.png",   self.saveDataAs),
@@ -803,17 +861,6 @@ class Dashboard(tk.Frame):
         adv_search_button = tk.Button(self.toolbar, text="Advanced Search", command=self.openAdvancedSearch)
         adv_search_button.pack(side=tk.LEFT, padx=5)
         self.buttons.append(adv_search_button)
-        
-    def filterByAccountType(self, account_type):
-        """Filters transactions based on account type (Banking or Investment)."""
-        
-        # Ensure all_data exists before filtering
-        if not hasattr(self.master, "all_data") or self.master.all_data.empty:
-            messagebox.showwarning("Warning", "No data available to filter!")
-            return
-    
-        filtered_df = self.master.all_data[self.master.all_data["Account Type"] == account_type]
-        self.updateTable(filtered_df)
         
     def searchTransactions(self):
         """Filters transactions based on user input, including numbers."""
@@ -913,7 +960,12 @@ class Dashboard(tk.Frame):
             search_window.destroy()
     
         # Search button
-        search_button = ttk.Button(search_window, text="Search", command=performAdvancedSearch)
+        search_button = tk.Button(search_window, 
+                                  text="Search", 
+                                  command=performAdvancedSearch,
+                                  bg=StyleConfig.BUTTON_COLOR, 
+                                  fg=StyleConfig.TEXT_COLOR, 
+                                  relief=StyleConfig.BUTTON_STYLE)
         search_button.pack(pady=10)
         
         # Bind keys
@@ -958,10 +1010,152 @@ class Dashboard(tk.Frame):
         self.tree.bind("<Double-1>", self.editCell)
         
     def sortTableByColumn(self, tv: ttk.Treeview, col: str, sort_direction: bool) -> None:
-        Tables.sortTableByColumn(tv, col, sort_direction)
-        Tables.applyBandedRows(self.tree, colors=[StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2])
+        Tables.sortTableByColumn(tv, col, sort_direction, colors=[StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2])
+    
+    def trackBankBalances(self):
+        """Opens a window to manually track the latest balance for each banking account."""
+    
+        if "Account" not in self.master.all_data:
+            return
+    
+        balance_window = tk.Toplevel(self)
+        balance_window.title("Track Bank Balances")
+    
+        # Labels
+        headers = ["Account", "Date", "Balance"]
+        for col, header in enumerate(headers):
+            tk.Label(balance_window, text=header, font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
+                     bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR).grid(row=0, column=col, padx=5, pady=5)
+    
+        # Entry fields
+        entry_fields = {}
+    
+        banking_accounts = self.master.all_data["Account"].unique().tolist()
+        for row, account in enumerate(banking_accounts, start=1):
+            tk.Label(balance_window, text=account, bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR).grid(row=row, column=0, padx=5, pady=5, sticky="w")
+    
+            # Ensure account entry in dictionary is always a list [date, balance]
+            if account not in self.initial_account_balances or not isinstance(self.initial_account_balances[account], list):
+                self.initial_account_balances[account] = ["1970-01-01", 0.00]  # Default balance
+    
+            # Date entry
+            date_var = tk.StringVar(value=self.initial_account_balances[account][0])
+            date_entry = tk.Entry(balance_window, textvariable=date_var, width=12)
+            date_entry.grid(row=row, column=1, padx=5, pady=5)
+    
+            # Balance entry
+            balance_var = tk.StringVar(value=f"{self.initial_account_balances.get(account, ['1970-01-01', 0.00])[1]:.2f}")
+            balance_entry = tk.Entry(balance_window, textvariable=balance_var, width=10)
+            balance_entry.grid(row=row, column=2, padx=5, pady=5)
+    
+            # Store references
+            entry_fields[account] = (date_var, balance_var)
+            
+        window_width, window_height = 300, (row+1)*31+60
+        Windows.openRelativeWindow(balance_window, main_width=self.winfo_x(), main_height=self.winfo_y(), width=window_width, height=window_height)
+    
+        # Button frame
+        button_frame = tk.Frame(balance_window, bg=StyleConfig.BG_COLOR)
+        button_frame.grid(row=len(banking_accounts) + 1, column=0, columnspan=3, pady=10)
+        
+        def validateInputs():
+            """Validates that the date is in a correct format and the balance is a number."""
+            date_formats = ["%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y", "%d %b %Y", "%b %d, %Y"]
+            errors = []
+    
+            for account, (date_var, balance_var) in entry_fields.items():
+                date_value = date_var.get().strip()
+                balance_value = balance_var.get().strip()
+    
+                # Validate Date
+                valid_date = False
+                for fmt in date_formats:
+                    try:
+                        parsed_date = datetime.strptime(date_value, fmt).date()
+                        date_var.set(parsed_date.strftime("%Y-%m-%d"))  # Normalize format
+                        valid_date = True
+                        break
+                    except ValueError:
+                        continue
+    
+                if not valid_date:
+                    errors.append(f"Invalid date format for {account}: {date_value}")
+    
+                # Validate Balance
+                try:
+                    balance_value = float(balance_value)
+                    balance_var.set(f"{balance_value:.2f}")  # Ensure formatting
+                except ValueError:
+                    errors.append(f"Invalid balance for {account}: {balance_value}")
+    
+            if errors:
+                messagebox.showerror("Input Error", "\n".join(errors))
+                return False
+            return True
+    
+        def applyChanges():
+            """Save the entered balance and date to the dictionary and update DataFrame."""
+            for account, (date_var, balance_var) in entry_fields.items():
+                try:
+                    date_value = date_var.get()
+                    balance_value = float(balance_var.get())
+    
+                    self.initial_account_balances[account] = [date_value, balance_value]
+                except ValueError:
+                    messagebox.showerror("Error", f"Invalid balance input for {account}. Please enter a number.")
+                    return
+    
+            self.updateBalancesInDataFrame()
+            balance_window.destroy()
+    
+        def closeWindow(event=None):
+            balance_window.destroy()
+    
+        # Buttons
+        ok_button = tk.Button(button_frame, 
+                              text="OK", 
+                              command=applyChanges, 
+                              bg=StyleConfig.BUTTON_COLOR, 
+                              fg=StyleConfig.TEXT_COLOR, 
+                              relief=StyleConfig.BUTTON_STYLE)
+        ok_button.grid(row=0, column=0, padx=5, pady=5)
+    
+        cancel_button = tk.Button(button_frame, 
+                                  text="Cancel", 
+                                  command=closeWindow, 
+                                  bg=StyleConfig.BUTTON_COLOR, 
+                                  fg=StyleConfig.TEXT_COLOR, 
+                                  relief=StyleConfig.BUTTON_STYLE)
+        cancel_button.grid(row=0, column=1, padx=5, pady=5)
+    
+        # Bind keyboard shortcuts
+        balance_window.bind("<Return>", lambda event: applyChanges())
+        balance_window.bind("<Escape>", closeWindow)
+    
+        balance_window.focus_force()
         
         
+    def updateBalancesInDataFrame(self):
+        #TODO
+        """Propagates balance changes in the transactions DataFrame."""
+        if self.master.all_data.empty:
+            return
+    
+        for account, (date_str, balance) in self.initial_account_balances.items():
+            # Convert string to datetime
+            date_value = datetime.strptime(date_str, StyleConfig.DATE_FORMAT).date()
+    
+            # Filter all transactions for this account
+            mask = (self.master.all_data["Account"] == account) & (self.master.all_data["Date"] >= date_value)
+    
+            # Sort transactions in ascending order
+            self.master.all_data.loc[mask, "Balance"] = balance
+    
+            # Propagate balance forward for subsequent transactions
+            self.master.all_data.loc[mask, "Balance"] = self.master.all_data.loc[mask, "Balance"].ffill()
+    
+        self.updateTable(self.master.all_data)
+
     def retrieveData(self):
         """
         Calls DataManager.retrieveData() once, processes each file using parseNewDF, and updates the UI.
@@ -976,8 +1170,12 @@ class Dashboard(tk.Frame):
         for account_name, df in retrieved_data:
             if df is not None and not df.empty:
                 # Ensure Dashboard instance is passed to parseNewDF
-                parsed_df = DataManager.parseNewDF(df, account_name, self)
+                parsed_df, case = DataManager.parseNewDF(df, account_name, self)
                 all_parsed_data.append(parsed_df)
+                self.account_cases[account_name] = case
+                
+                if account_name not in self.initial_account_balances:
+                    self.initial_account_balances[account_name] = ["1970-01-01", 0.00]
     
         if all_parsed_data:
             # Combine all parsed data into a single DataFrame
@@ -987,6 +1185,10 @@ class Dashboard(tk.Frame):
             self.master.all_data = final_df.copy()
             self.master.all_data = DataFrameProcessor.getDataFrameIndex(self.master.all_data)
             self.updateTable(self.master.all_data.copy())
+            
+        print (self.account_cases)
+            
+            
             
     def addTransaction(self):
         """Calls TransactionManager.addTransaction, passing the Dashboard instance."""
@@ -1010,8 +1212,8 @@ class Dashboard(tk.Frame):
         # Function to save the new value
         def saveEdit(new_value):
             """Save changes to DataFrame and update UI."""
-            selected_number = int(self.tree.item(item, "values")[0])  # Get the 'Number' field
-            index_to_update = self.master.all_data[self.master.all_data["Number"] == selected_number].index
+            selected_number = int(self.tree.item(item, "values")[0])  # Get the 'No.' field
+            index_to_update = self.master.all_data[self.master.all_data["No."] == selected_number].index
     
             if not index_to_update.empty:
                 # Convert numerical columns to valid format
@@ -1052,8 +1254,8 @@ class Dashboard(tk.Frame):
         # Get current cell value
         current_value = self.tree.item(item, "values")[col_index]
         
-        # Disable editing for 'Number' column
-        if col_name == "Number":
+        # Disable editing for 'No.' column
+        if col_name == "No.":
             return  
     
         # Editing options based on column type
@@ -1161,7 +1363,7 @@ class Dashboard(tk.Frame):
         category_window = tk.Toplevel(self)
         category_window.title("Manage Categories")
         
-        window_height, window_width = 350, 400
+        window_height, window_width = 400, 300
         Windows.openRelativeWindow(category_window, main_width=self.winfo_x(), main_height=self.winfo_y(), width=window_width, height=window_height)
     
         ttk.Label(category_window, text="Categories", font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")).pack(pady=5)
@@ -1211,10 +1413,9 @@ class Dashboard(tk.Frame):
                 confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this category?")
                 if confirm:
                     sorted(self.categories.pop(selected_index[0]))
-                    print (self.categories)
                     category_listbox.delete(selected_index)
                     saveCategories()
-                    self.viewCategories()
+                self.viewCategories()
     
         def saveCategories():
             with open(self.category_file, "w") as f:
@@ -1224,18 +1425,35 @@ class Dashboard(tk.Frame):
         def closeWindow(event=None):
             category_window.destroy()
     
-        # Buttons
-        button_frame = ttk.Frame(category_window)
-        button_frame.pack(pady=5)
-    
-        ttk.Button(button_frame, text="Add",    command=addCategory).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Modify", command=modifyCategory).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Delete", command=deleteCategory).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Exit", command=closeWindow).pack(side=tk.LEFT, padx=5)
+        # Create button frame with background color from StyleConfig
+        button_frame = tk.Frame(category_window, bg=StyleConfig.BG_COLOR)
+        button_frame.pack(pady=10)
+        
+        # Define button attributes dynamically from StyleConfig.py
+        button_attributes = {
+            "bg": StyleConfig.BUTTON_COLOR,
+            "fg": StyleConfig.TEXT_COLOR,
+            "font": (StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE),
+            "relief": StyleConfig.BUTTON_STYLE,
+            "padx": StyleConfig.BUTTON_PADDING,
+            "pady": StyleConfig.BUTTON_PADDING,
+            "width": 10  # Ensure consistent button width
+        }
+        
+        # Create Buttons
+        add_button = tk.Button(button_frame, text="Add", command=addCategory, **button_attributes)
+        modify_button = tk.Button(button_frame, text="Modify", command=modifyCategory, **button_attributes)
+        delete_button = tk.Button(button_frame, text="Delete", command=deleteCategory, **button_attributes)
+        exit_button = tk.Button(button_frame, text="Exit", command=closeWindow, **button_attributes)
+        
+        # Arrange buttons in a 3+1 grid layout
+        add_button.grid(row=0, column=0, padx=5, pady=5)
+        modify_button.grid(row=0, column=1, padx=5, pady=5)
+        delete_button.grid(row=0, column=2, padx=5, pady=5)
+        exit_button.grid(row=1, column=0, columnspan=3, padx=5, pady=5)  # Exit button spans 3 columns
         
         # Bind keys
-        category_window.bind("<Escape>", closeWindow)
-        
+        category_window.bind("<Escape>", lambda event: closeWindow())
         category_window.focus_force()
         
     def viewPayees(self):
@@ -1323,17 +1541,27 @@ class Dashboard(tk.Frame):
                 entry = ttk.Entry(frame, textvariable=var, width=10)
                 entry.pack(side=tk.LEFT, padx=5)
             
-                color_button = ttk.Button(frame, text="🎨", width=3, command=lambda: pickColor(var, entry))
+                color_button = tk.Button(frame, 
+                                          text="🎨",
+                                          width=4, 
+                                          command=lambda: pickColor(var, entry), 
+                                          bg=StyleConfig.BUTTON_COLOR, 
+                                          fg=StyleConfig.TEXT_COLOR, 
+                                          relief=StyleConfig.BUTTON_STYLE)
                 color_button.pack(side=tk.LEFT)
+                
             elif isinstance(var, tk.StringVar) and not options:
                 entry = ttk.Entry(frame, textvariable=var, width=15)
                 entry.pack(side=tk.RIGHT, fill="x", expand=True)
+                
             elif isinstance(var, tk.IntVar):
                 entry = ttk.Spinbox(frame, textvariable=var, from_=1, to=30, width=5)
                 entry.pack(side=tk.RIGHT, fill="x", expand=True)
+                
             elif isinstance(var, tk.BooleanVar):
                 checkbox = ttk.Checkbutton(frame, variable=var)
                 checkbox.pack(side=tk.RIGHT)
+                
             elif options:
                 dropdown = ttk.Combobox(frame, textvariable=var, values=options, state="readonly", width=15)
                 dropdown.pack(side=tk.RIGHT, fill="x", expand=True)
@@ -1398,13 +1626,28 @@ class Dashboard(tk.Frame):
         button_frame = ttk.Frame(options_window)
         button_frame.pack(pady=10)
     
-        apply_button = ttk.Button(button_frame, text="Apply", command=applyChanges)
+        apply_button = tk.Button(button_frame, 
+                                  text="Apply", 
+                                  command=applyChanges,
+                                  bg=StyleConfig.BUTTON_COLOR, 
+                                  fg=StyleConfig.TEXT_COLOR, 
+                                  relief=StyleConfig.BUTTON_STYLE)
         apply_button.grid(row=0, column=0, padx=5, pady=5)
     
-        standard_button = ttk.Button(button_frame, text="Standard Options", command=resetToStandard)
+        standard_button = tk.Button(button_frame, 
+                                     text="Standard Options", 
+                                     command=resetToStandard,
+                                     bg=StyleConfig.BUTTON_COLOR, 
+                                     fg=StyleConfig.TEXT_COLOR, 
+                                     relief=StyleConfig.BUTTON_STYLE)
         standard_button.grid(row=1, column=0, columnspan=2, padx=5, pady=5)
     
-        cancel_button = ttk.Button(button_frame, text="Cancel", command=closeWindow)
+        cancel_button = tk.Button(button_frame, 
+                                   text="Cancel", 
+                                   command=closeWindow,
+                                   bg=StyleConfig.BUTTON_COLOR, 
+                                   fg=StyleConfig.TEXT_COLOR, 
+                                   relief=StyleConfig.BUTTON_STYLE)
         cancel_button.grid(row=0, column=1, padx=5, pady=5)
         
         # Bind keys
@@ -1459,10 +1702,12 @@ class Dashboard(tk.Frame):
         # Update Sidebar Labels
         self.banking_label.config(bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
         self.investment_label.config(bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
+        self.category_label.config(bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
     
         # Update Sidebar Account Lists
         self.accounts_list.config(bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
         self.investments_list.config(bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
+        self.category_list.config(bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
     
         # Update Search Label in Toolbar
         self.search_label.config(bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
@@ -1503,6 +1748,7 @@ class Dashboard(tk.Frame):
         # Update accounts listbox
         self.updateBankingAccountsToolbox(df)
         self.updateInvestmentAccountsToolbox(df)
+        self.updateCategoryToolbox(df)
         
     def updateBankingAccountsToolbox(self, df: pd.DataFrame) -> None:
         """Updates the sidebar listbox with only banking accounts and their balances."""
@@ -1537,40 +1783,78 @@ class Dashboard(tk.Frame):
         # Insert individual investment accounts
         for account, balance in self.investment_balances.items():
             self.investments_list.insert(tk.END, f"{account} ${balance / 100:.2f}")  # Format balance
+            
+    def updateCategoryToolbox(self, df: pd.DataFrame) -> None:
+        """Updates the sidebar listbox with categories"""
+        self.category_list.delete(0, tk.END)  # Clear previous entries
+    
+        # Add "All Investment Accounts" option
+        self.category_list.insert(tk.END, "All Categories")
+    
+        # Insert individual investment accounts
+        for category in self.categories:
+            self.category_list.insert(tk.END, category)
                     
     def filterTransactionsByBankingAccount(self, event):
         """Filters transactions by selected account in the listbox."""
         selected_index = self.accounts_list.curselection()
         
-        if not selected_index:  # If nothing selected, return
+        if not selected_index:
             return
         
         selected_text = self.accounts_list.get(selected_index)
         
         if selected_text == "All Banking Accounts":
-            filtered_df = self.master.all_data.copy()  # Make a copy to avoid modification issues
+            filtered_df = self.master.all_data.copy()
         else:
-            account_name = selected_text.split(" $")[0]  # Extract account name
+            account_name = selected_text.split(" $")[0]
             filtered_df = self.master.all_data[self.master.all_data["Account"] == account_name].copy()
         
-        self.updateTable(filtered_df)  # Update table with filtered results
+        self.updateTable(filtered_df)
         
     def filterTransactionsByInvestmentAccount(self, event):
         """Filters transactions by selected account in the listbox."""
         selected_index = self.investments_list.curselection()
         
-        if not selected_index:  # If nothing selected, return
+        if not selected_index:
             return
         
         selected_text = self.investments_list.get(selected_index)
         
         if selected_text == "All Investment Accounts":
-            filtered_df = self.master.all_data.copy()  # Make a copy to avoid modification issues
+            filtered_df = self.master.all_data.copy()
         else:
-            account_name = selected_text.split(" $")[0]  # Extract account name
+            account_name = selected_text.split(" $")[0]
             filtered_df = self.master.all_data[self.master.all_data["Account"] == account_name].copy()
         
-        self.updateTable(filtered_df)  # Update table with filtered results
+        self.updateTable(filtered_df)
+        
+    def filterTransactionsByCategory(self, event):
+        """Filters transactions by selected account in the listbox."""
+        selected_index = self.category_list.curselection()
+        
+        if not selected_index:
+            return
+        
+        category = self.category_list.get(selected_index)
+        
+        if category == "All Categories":
+            filtered_df = self.master.all_data.copy()
+        else:
+            filtered_df = self.master.all_data[self.master.all_data["Category"] == category].copy()
+        
+        self.updateTable(filtered_df)
+     
+    def filterByAccountType(self, account_type):
+        """Filters transactions based on account type (Banking or Investment)."""
+        
+        # Ensure all_data exists before filtering
+        if not hasattr(self.master, "all_data") or self.master.all_data.empty:
+            messagebox.showwarning("Warning", "No data available to filter!")
+            return
+    
+        filtered_df = self.master.all_data[self.master.all_data["Account Type"] == account_type]
+        self.updateTable(filtered_df)
         
     def clearTable(self, event=None):
         """comment"""
