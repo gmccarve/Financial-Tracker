@@ -112,8 +112,8 @@ class Windows:
             None
         """    
         # Position new window slightly offset from the main window
-        new_x = main_width  + 50
-        new_y = main_height + 50
+        new_x = main_width  + 250
+        new_y = main_height + 250
     
         new_window.geometry(f"{width}x{height}+{new_x}+{new_y}")  # Format: "WIDTHxHEIGHT+X+Y"
         
@@ -166,19 +166,19 @@ class Tables:
             tv.move(k, '', index)
     
         # Reapply banded row styling
-        Tables.applyBandedRows(tv)
+        #Tables.applyBandedRows(tv)
     
         # Reverse sort next time
         tv.heading(col, command=lambda: Tables.sortTableByColumn(tv, col, not reverse))
         
-    def applyBandedRows(tv, c1, c2):
+    def applyBandedRows(tv: ttk.Treeview, colors: list[str, str]) -> None:
         """Recolors Treeview rows to maintain alternating row stripes after sorting."""
         for index, row in enumerate(tv.get_children('')):
             tag = "evenrow" if index % 2 == 0 else "oddrow"
             tv.item(row, tags=(tag,))
     
         # Define colors for tags
-        tv.tag_configure("evenrow", background=c1)
-        tv.tag_configure("oddrow", background=c2) 
+        tv.tag_configure("evenrow", background=colors[0])
+        tv.tag_configure("oddrow", background=colors[1]) 
         
         

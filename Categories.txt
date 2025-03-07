@@ -1,32 +1,43 @@
+Airfare
 Car Insurance
 Car Maintenance
 Cat
 Credit Card Payment
+Dining
 Eating Out
 Electricity
+Entertainment
 Furniture
 Gas
+Gas/Automotive
 Groceries
 House Goods
 Interest Payment
 Internet
 Investments
+Lodging
 Medical
+Merchandise
 Miscellaneous
 Not Assigned
+Other
+Other Services
+Other Travel
+Paycheck
+Payment/Credit
 Phone
+Phone/Cable
+Professional Services
 Recreation & Entertainment
+Refund
 Rent
 Shopping
+Student Loan Payment
 Subscriptions
 Technology
+Transfer from Checking
 Transfer to Checking
 Transfer to Savings
 Travel
 Work
-Other
-Paycheck
-Refund
-Student Loan Payment
 Transfer from Savings
-Transfer from Checking

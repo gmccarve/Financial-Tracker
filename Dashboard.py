@@ -6,6 +6,7 @@ import importlib
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, PhotoImage, font
+import tkinter.simpledialog as simpledialog
 import tkinter.colorchooser as colorchooser
 from PIL import Image, ImageTk
 from tkcalendar import Calendar
@@ -541,8 +542,9 @@ class TransactionManager:
     
         # Create transaction window
         transaction_window = tk.Toplevel(dashboard)
+        window_width, window_height = 300, 330
+        Windows.openRelativeWindow(transaction_window, main_width=dashboard.winfo_x(), main_height=dashboard.winfo_y(), width=window_width, height=window_height)
         transaction_window.title("Edit Transaction" if edit else "Add Transaction")
-        transaction_window.geometry("300x330")  # Increased size for better scaling
     
         transaction_window.bind("<Escape>", closeWindow)
         transaction_window.bind("<Return>", submitTransaction)
@@ -593,6 +595,8 @@ class TransactionManager:
     
         dashboard.updateTable(dashboard.master.all_data)
                     
+
+#TODO RELATIVE WINDOW OPENINGS
     
 class Dashboard(tk.Frame):
     def __init__(self, master):
@@ -631,6 +635,7 @@ class Dashboard(tk.Frame):
         self.account_balances = {}
         
         self.category_file = os.path.join(os.path.dirname(__file__), "Categories.txt")
+        self.getCategories()
         with open(self.category_file, "r") as f:
             self.categories = [line.strip() for line in f.readlines()]
         self.categories = sorted(self.categories)
@@ -641,11 +646,11 @@ class Dashboard(tk.Frame):
         """Creates and places all main widgets for the dashboard."""
         
         # Increase Sidebar Width
-        self.sidebar = ttk.Frame(self, width=350, relief=tk.RIDGE, padding=5)  # Increased width
+        self.sidebar = tk.Frame(self, width=350, relief=tk.RIDGE, bg=StyleConfig.BG_COLOR)
         self.sidebar.grid(row=0, column=0, sticky='nsw')
         self.createSidebar()
         
-        self.main_content = ttk.Frame(self)
+        self.main_content = tk.Frame(self)
         self.main_content.grid(row=0, column=1, sticky='nsew')
         
         self.createToolbar()
@@ -659,7 +664,10 @@ class Dashboard(tk.Frame):
         """Creates the sidebar with accounts, reports, and actions."""
         
         # Accounts Listbox
-        ttk.Label(self.sidebar, text="Banking Accounts", font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")).pack(anchor='center', pady=5)
+        self.banking_label = tk.Label(self.sidebar, text="Banking Accounts",
+                                      font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
+                                      bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
+        self.banking_label.pack(anchor='center', pady=5)
     
         # Add a frame to contain the listbox and scrollbar
         self.accounts_listbox_frame = ttk.Frame(self.sidebar)
@@ -682,7 +690,10 @@ class Dashboard(tk.Frame):
         
         
         # Investments Listbox
-        ttk.Label(self.sidebar, text="Investment Accounts", font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")).pack(anchor='center', pady=5)
+        self.investment_label = tk.Label(self.sidebar, text="Investment Accounts",
+                                         font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
+                                         bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
+        self.investment_label.pack(anchor='center', pady=5)
     
         # Add a frame to contain the listbox and scrollbar
         self.investment_listbox_frame = ttk.Frame(self.sidebar)
@@ -716,7 +727,7 @@ class Dashboard(tk.Frame):
     def createToolbar(self):
         """Creates a toolbar with basic transaction actions."""
         
-        self.toolbar = ttk.Frame(self.main_content, relief=tk.RIDGE, padding=5)
+        self.toolbar = tk.Frame(self.main_content, relief=tk.RIDGE, bg=StyleConfig.BG_COLOR)
         self.toolbar.grid(row=0, column=0, sticky='ew')
         
         self.button_image_loc = os.path.join(os.path.dirname(__file__), "Images")
@@ -776,18 +787,22 @@ class Dashboard(tk.Frame):
                 ttk.Separator(self.toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
                 
         # Search Bar
-        search_label = ttk.Label(self.toolbar, text="Search:")
-        search_label.pack(side=tk.LEFT, padx=5)
+        self.search_label = tk.Label(self.toolbar, text="Search:", 
+                                     font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE),
+                                     bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
+        self.search_label.pack(side=tk.LEFT, padx=5)
         
-        self.search_entry = ttk.Entry(self.toolbar, width=30)
+        self.search_entry = tk.Entry(self.toolbar, width=30)
         self.search_entry.pack(side=tk.LEFT, padx=5)
         self.search_entry.bind("<Return>", lambda event: self.searchTransactions())
         
-        search_button = ttk.Button(self.toolbar, text="Go", command=self.searchTransactions)
+        search_button = tk.Button(self.toolbar, text="Go", command=self.searchTransactions)
         search_button.pack(side=tk.LEFT, padx=5)
+        self.buttons.append(search_button)
         
-        adv_search_button = ttk.Button(self.toolbar, text="Advanced Search", command=self.openAdvancedSearch)
+        adv_search_button = tk.Button(self.toolbar, text="Advanced Search", command=self.openAdvancedSearch)
         adv_search_button.pack(side=tk.LEFT, padx=5)
+        self.buttons.append(adv_search_button)
         
     def filterByAccountType(self, account_type):
         """Filters transactions based on account type (Banking or Investment)."""
@@ -802,10 +817,18 @@ class Dashboard(tk.Frame):
         
     def searchTransactions(self):
         """Filters transactions based on user input, including numbers."""
+        
         query = self.search_entry.get().strip().lower()
     
         if not query:
-            self.updateTable(self.master.all_data)  # Reset table if empty search
+            try:
+                self.updateTable(self.master.all_data)  # Reset table if empty search
+            except:
+                pass
+            return
+        
+        if not hasattr(self.master, "all_data") or self.master.all_data.empty:
+            messagebox.showwarning("Warning", "No data to search!")
             return
     
         def match_query(row):
@@ -826,7 +849,7 @@ class Dashboard(tk.Frame):
                     return True
     
             return False
-    
+
         filtered_df = self.master.all_data[self.master.all_data.apply(match_query, axis=1)]
         self.updateTable(filtered_df)
         
@@ -902,17 +925,17 @@ class Dashboard(tk.Frame):
     def createTransactionTable(self):
         """Creates the transaction table with scrolling."""
         
-        table_frame = ttk.Frame(self.main_content)
-        table_frame.grid(row=1, column=0, sticky='nsew', padx=10, pady=10)
+        self.table_frame = tk.Frame(self.main_content)
+        self.table_frame.grid(row=1, column=0, sticky='nsew', padx=10, pady=10)
         
-        self.tree = ttk.Treeview(table_frame, show='headings', height=15)
+        self.tree = ttk.Treeview(self.table_frame, show='headings', height=15)
         
         columns = list(self.banking_column_widths.keys())
         self.tree['columns'] = columns
         
         for col in columns:
             self.tree.heading(col, text=col, anchor=tk.CENTER, 
-                              command=lambda c=col: Tables.sortTableByColumn(self.tree, c, False))
+                              command=lambda c=col: self.sortTableByColumn(self.tree, c, False))
             
             # Check if the column should be hidden
             if self.banking_column_widths[col] == 0:
@@ -921,7 +944,7 @@ class Dashboard(tk.Frame):
                 self.tree.column(col, width=self.banking_column_widths[col], anchor=tk.W)
             
         # Scrollbars
-        y_scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        y_scrollbar = ttk.Scrollbar(self.table_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscrollcommand=y_scrollbar.set)
         
         y_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -933,6 +956,11 @@ class Dashboard(tk.Frame):
         
         # Bind double-click to edit cell
         self.tree.bind("<Double-1>", self.editCell)
+        
+    def sortTableByColumn(self, tv: ttk.Treeview, col: str, sort_direction: bool) -> None:
+        Tables.sortTableByColumn(tv, col, sort_direction)
+        Tables.applyBandedRows(self.tree, colors=[StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2])
+        
         
     def retrieveData(self):
         """
@@ -1106,18 +1134,109 @@ class Dashboard(tk.Frame):
             dropdown.bind("<FocusOut>", cancelEdit)
                          
     def smoothScroll(self, event=None) -> None:
-        """Smooth scrolling for all sidebar listboxes."""
+        """Smooth scrolling for listboxes, dynamically adjusting speed."""
         widget = event.widget
         if isinstance(widget, tk.Listbox):
-            widget.yview_scroll(-1 if event.delta > 0 else 1, "units")
-            
-    def chooseAccounts(self):
-        """Placeholder for deleting a transaction."""
-        print("Choose Accounts")
+            speed = StyleConfig.SCROLL_SPEED  # Read the scroll speed
+            widget.yview_scroll(-speed if event.delta > 0 else speed, "units")
+                    
+    def getCategories(self):
+        # Load categories from file
+        with open(self.category_file, "r") as f:
+            file_categories = [line.strip() for line in f.readlines()]
         
+        try:
+            # Get unique categories from all_data that aren't in the file
+            if "Category" in self.master.all_data.columns:
+                data_categories = set(self.master.all_data["Category"].dropna().unique())
+            else:
+                data_categories = set()
+        except AttributeError:
+            data_categories = set()
+        
+        self.categories = sorted(set(file_categories) | data_categories)
+    
     def viewCategories(self):
-        """Placeholder for deleting a transaction."""
-        print("View Categories")
+        """Opens a window to manage categories."""
+        category_window = tk.Toplevel(self)
+        category_window.title("Manage Categories")
+        
+        window_height, window_width = 350, 400
+        Windows.openRelativeWindow(category_window, main_width=self.winfo_x(), main_height=self.winfo_y(), width=window_width, height=window_height)
+    
+        ttk.Label(category_window, text="Categories", font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")).pack(pady=5)
+    
+        # Listbox to display categories
+        list_frame = ttk.Frame(category_window)
+        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+    
+        category_listbox = tk.Listbox(list_frame, height=15)
+        category_listbox.pack(side=tk.LEFT, fill="both", expand=True)
+        
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=category_listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill="y")
+        category_listbox.config(yscrollcommand=scrollbar.set)
+        
+        def loadCategories():
+            self.getCategories()
+            
+            # Populate the listbox
+            category_listbox.delete(0, tk.END)
+            for category in self.categories:
+                category_listbox.insert(tk.END, category)
+        
+        loadCategories()
+    
+        def addCategory():
+            new_category = simpledialog.askstring("Add Category", "Enter new category:")
+            if new_category and new_category not in self.categories:
+                self.categories.append(new_category)
+                category_listbox.insert(tk.END, new_category)
+                saveCategories()
+    
+        def modifyCategory():
+            selected_index = category_listbox.curselection()
+            if selected_index:
+                old_category = category_listbox.get(selected_index)
+                new_category = simpledialog.askstring("Modify Category", "Enter new name:", initialvalue=old_category)
+                if new_category and new_category not in self.categories:
+                    self.categories[selected_index[0]] = new_category
+                    category_listbox.delete(selected_index)
+                    category_listbox.insert(selected_index, new_category)
+                    saveCategories()
+    
+        def deleteCategory():
+            selected_index = category_listbox.curselection()
+            if selected_index:
+                confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this category?")
+                if confirm:
+                    sorted(self.categories.pop(selected_index[0]))
+                    print (self.categories)
+                    category_listbox.delete(selected_index)
+                    saveCategories()
+                    self.viewCategories()
+    
+        def saveCategories():
+            with open(self.category_file, "w") as f:
+                for category in self.categories:
+                    f.write(category + "\n")
+                    
+        def closeWindow(event=None):
+            category_window.destroy()
+    
+        # Buttons
+        button_frame = ttk.Frame(category_window)
+        button_frame.pack(pady=5)
+    
+        ttk.Button(button_frame, text="Add",    command=addCategory).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Modify", command=modifyCategory).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Delete", command=deleteCategory).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Exit", command=closeWindow).pack(side=tk.LEFT, padx=5)
+        
+        # Bind keys
+        category_window.bind("<Escape>", closeWindow)
+        
+        category_window.focus_force()
         
     def viewPayees(self):
         """Placeholder for deleting a transaction."""
@@ -1151,27 +1270,35 @@ class Dashboard(tk.Frame):
         if new_settings:
             # Dictionary to store new settings
             self.temp_settings = {
-                "FONT_FAMILY": tk.StringVar(value=StyleConfig.FONT_FAMILY),
-                "FONT_SIZE": tk.IntVar(value=StyleConfig.FONT_SIZE),
-                "HEADING_FONT_SIZE": tk.IntVar(value=StyleConfig.HEADING_FONT_SIZE),
-                "BUTTON_FONT_SIZE" : tk.IntVar(value=StyleConfig.BUTTON_FONT_SIZE),
-                "ROW_HEIGHT": tk.IntVar(value=StyleConfig.ROW_HEIGHT),
-                "BG_COLOR": tk.StringVar(value=StyleConfig.BG_COLOR),
-                "HEADER_COLOR": tk.StringVar(value=StyleConfig.HEADER_COLOR),
-                "BUTTON_COLOR": tk.StringVar(value=StyleConfig.BUTTON_COLOR),
-                "BAND_COLOR_1": tk.StringVar(value=StyleConfig.BAND_COLOR_1),
-                "BAND_COLOR_2": tk.StringVar(value=StyleConfig.BAND_COLOR_2),
+                "FONT_FAMILY":          tk.StringVar(value=StyleConfig.FONT_FAMILY),
+                "FONT_SIZE":            tk.IntVar(value=StyleConfig.FONT_SIZE),
+                "HEADING_FONT_SIZE":    tk.IntVar(value=StyleConfig.HEADING_FONT_SIZE),
+                "BUTTON_FONT_SIZE" :    tk.IntVar(value=StyleConfig.BUTTON_FONT_SIZE),
+                "ROW_HEIGHT":           tk.IntVar(value=StyleConfig.ROW_HEIGHT),
+                "TEXT_COLOR":           tk.StringVar(value=StyleConfig.TEXT_COLOR),
+                "BG_COLOR":             tk.StringVar(value=StyleConfig.BG_COLOR),
+                "HEADER_COLOR":         tk.StringVar(value=StyleConfig.HEADER_COLOR),
+                "BUTTON_COLOR":         tk.StringVar(value=StyleConfig.BUTTON_COLOR),
+                "BAND_COLOR_1":         tk.StringVar(value=StyleConfig.BAND_COLOR_1),
+                "BAND_COLOR_2":         tk.StringVar(value=StyleConfig.BAND_COLOR_2),
+                "SCROLL_SPEED":         tk.IntVar(value=StyleConfig.SCROLL_SPEED),
+                "BUTTON_STYLE":         tk.StringVar(value=StyleConfig.BUTTON_STYLE),
+                "BUTTON_PADDING":       tk.IntVar(value=StyleConfig.BUTTON_PADDING),
+                "BUTTON_BORDER_RADIUS": tk.IntVar(value=StyleConfig.BUTTON_BORDER_RADIUS),
+                "DARK_MODE":            tk.BooleanVar(value=StyleConfig.DARK_MODE),
             }
             
-        win_height = len(self.temp_settings.keys()) * 30 + 90
-         
-        options_window.geometry(f"260x{win_height}")   
+        # Set geometry of options window
+        window_height = len(self.temp_settings.keys()) * 28 + 100
+        window_width = 260
+        
+        # Open window relative to the position of the dashboard
+        Windows.openRelativeWindow(options_window, main_width=self.winfo_x(), main_height=self.winfo_y(), width=window_width, height=window_height)   
     
         def pickColor(var, entry_widget):
             """Opens the color chooser asynchronously and updates the entry field."""
             options_window.lift()  # Bring options window to the front (optional)
             
-            # Use `after()` to open colorchooser asynchronously
             def openColorChooser():
                 color_code = colorchooser.askcolor(title="Choose a Color")[1]  # Get hex value
                 if color_code:
@@ -1179,9 +1306,11 @@ class Dashboard(tk.Frame):
                     entry_widget.delete(0, tk.END)
                     entry_widget.insert(0, color_code)  # Update the entry field dynamically
                     
+                    setattr(StyleConfig, var._name, color_code)  # Update StyleConfig dynamically
+                    self.applyStyleChanges()
+                    
                 self.viewOptions(new_settings=False)
-        
-            options_window.after(10, openColorChooser)  # Open color chooser without blocking
+            options_window.after(10, openColorChooser)
     
         # Function to create labeled settings row
         def createSettingRow(label, var, parent, options=None, is_color=False):
@@ -1200,23 +1329,32 @@ class Dashboard(tk.Frame):
                 entry = ttk.Entry(frame, textvariable=var, width=15)
                 entry.pack(side=tk.RIGHT, fill="x", expand=True)
             elif isinstance(var, tk.IntVar):
-                entry = ttk.Spinbox(frame, textvariable=var, from_=8, to=30, width=5)
+                entry = ttk.Spinbox(frame, textvariable=var, from_=1, to=30, width=5)
                 entry.pack(side=tk.RIGHT, fill="x", expand=True)
+            elif isinstance(var, tk.BooleanVar):
+                checkbox = ttk.Checkbutton(frame, variable=var)
+                checkbox.pack(side=tk.RIGHT)
             elif options:
                 dropdown = ttk.Combobox(frame, textvariable=var, values=options, state="readonly", width=15)
                 dropdown.pack(side=tk.RIGHT, fill="x", expand=True)
     
         # Create settings fields
-        createSettingRow("Font Family:", self.temp_settings["FONT_FAMILY"], options_window, sorted(list(font.families())))
-        createSettingRow("Font Size:", self.temp_settings["FONT_SIZE"], options_window)
-        createSettingRow("Header Font Size:", self.temp_settings["HEADING_FONT_SIZE"], options_window)
-        createSettingRow("Button Font Size:", self.temp_settings["BUTTON_FONT_SIZE"], options_window)
-        createSettingRow("Row Height:", self.temp_settings["ROW_HEIGHT"], options_window)
-        createSettingRow("Background Color:", self.temp_settings["BG_COLOR"], options_window, is_color=True)
-        createSettingRow("Header Color:", self.temp_settings["HEADER_COLOR"], options_window, is_color=True)
-        createSettingRow("Button Color:", self.temp_settings["BUTTON_COLOR"], options_window, is_color=True)
-        createSettingRow("Band Color 1:", self.temp_settings["BAND_COLOR_1"], options_window, is_color=True)
-        createSettingRow("Band Color 2:", self.temp_settings["BAND_COLOR_2"], options_window, is_color=True)
+        createSettingRow("Font Family:",        self.temp_settings["FONT_FAMILY"], options_window, sorted(list(font.families())))
+        createSettingRow("Font Size:",          self.temp_settings["FONT_SIZE"], options_window)
+        createSettingRow("Header Font Size:",   self.temp_settings["HEADING_FONT_SIZE"], options_window)
+        createSettingRow("Button Font Size:",   self.temp_settings["BUTTON_FONT_SIZE"], options_window)
+        createSettingRow("Row Height:",         self.temp_settings["ROW_HEIGHT"], options_window)
+        createSettingRow("Scroll Speed:",       self.temp_settings["SCROLL_SPEED"], options_window)
+        createSettingRow("Text Color:",         self.temp_settings["TEXT_COLOR"], options_window, is_color=True)
+        createSettingRow("Background Color:",   self.temp_settings["BG_COLOR"], options_window, is_color=True)
+        createSettingRow("Header Color:",       self.temp_settings["HEADER_COLOR"], options_window, is_color=True)
+        createSettingRow("Button Color:",       self.temp_settings["BUTTON_COLOR"], options_window, is_color=True)
+        createSettingRow("Band Color 1:",       self.temp_settings["BAND_COLOR_1"], options_window, is_color=True)
+        createSettingRow("Band Color 2:",       self.temp_settings["BAND_COLOR_2"], options_window, is_color=True)
+        createSettingRow("Button Style:",       self.temp_settings["BUTTON_STYLE"], options_window, ["flat", "groove", "sunken", "raised", "ridge"])
+        createSettingRow("Button Padding:",     self.temp_settings["BUTTON_PADDING"], options_window)
+        createSettingRow("Button Radius:",      self.temp_settings["BUTTON_BORDER_RADIUS"], options_window)
+        createSettingRow("Enable Dark Mode:",   self.temp_settings["DARK_MODE"], options_window)
         
         def resetToStandard():
             """Resets all settings to their default values dynamically from StyleConfig."""
@@ -1229,21 +1367,29 @@ class Dashboard(tk.Frame):
                 setattr(StyleConfig, key, value)
         
             self.applyStyleChanges()  # Apply the updated styles to the UI
+            saveUserSettings(data=default_settings)  # Save user settings to file
             closeWindow()
     
         def applyChanges():
             """Applies settings dynamically without modifying StyleConfig.py"""
             for key, var in self.temp_settings.items():
                 setattr(StyleConfig, key, var.get())
+                
+            # Toggle Dark Mode dynamically
+            StyleConfig.applyDarkMode(self.temp_settings["DARK_MODE"].get())
     
             self.applyStyleChanges()
             saveUserSettings()  # Save user settings to file
             closeWindow()
     
         # Save settings function
-        def saveUserSettings():
-            with open("user_settings.pkl", "wb") as f:
-                pickle.dump({key: var.get() for key, var in self.temp_settings.items()}, f)
+        def saveUserSettings(data=None):
+            if data == None:
+                with open("user_settings.pkl", "wb") as f:
+                    pickle.dump({key: var.get() for key, var in self.temp_settings.items()}, f)
+            else:
+               with open("user_settings.pkl", "wb") as f:
+                   pickle.dump({key: var for key, var in data.items()}, f) 
                 
         def closeWindow(event=None):
             options_window.destroy()
@@ -1268,27 +1414,62 @@ class Dashboard(tk.Frame):
         options_window.focus_force()
         
     def applyStyleChanges(self):
-        """Applies the updated style settings dynamically."""
+        """Applies updated style settings dynamically to ttk and standard Tk widgets."""
+        
+        # Apply background color to main sections
+        self.sidebar.config(bg=StyleConfig.BG_COLOR)
+        self.toolbar.config(bg=StyleConfig.BG_COLOR)
+        self.main_content.config(bg=StyleConfig.BG_COLOR)
+        self.table_frame.config(bg=StyleConfig.BG_COLOR)
     
-        # Update Treeview row height using ttk.Style
         style = ttk.Style()
+    
+        # Update Treeview 
         style.configure("Treeview", 
                         rowheight=StyleConfig.ROW_HEIGHT, 
-                        font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE))
+                        font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE),
+                        background=StyleConfig.BG_COLOR,
+                        foreground=StyleConfig.TEXT_COLOR,
+                        fieldbackground=StyleConfig.BG_COLOR)
         
+        # Update Treeview headers
         style.configure("Treeview.Heading", 
-                    font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE, "bold"))
+                        font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
+                        background=StyleConfig.HEADER_COLOR, 
+                        foreground='black',
+                        fieldbackground=StyleConfig.BG_COLOR,
+                        relief="flat")
     
         # Update alternating row colors (banded rows)
-        Tables.applyBandedRows(self.tree, StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2)
+        Tables.applyBandedRows(self.tree, colors=[StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2])
+        
+        # Ensure selection highlight matches dark mode
+        style.map("Treeview", 
+                  background=[("selected", StyleConfig.SELECTION_COLOR)],
+                  foreground=[("selected", "#FFFFFF" if StyleConfig.DARK_MODE else "#000000")])
         
         # Update toolbar buttons
         for btn in self.buttons:
-            btn.config(bg=StyleConfig.BUTTON_COLOR)
-            btn['font'] = StyleConfig.FONT_FAMILY + " " + str(StyleConfig.BUTTON_FONT_SIZE)
+            btn.config(bg=StyleConfig.BUTTON_COLOR,
+                       fg=StyleConfig.TEXT_COLOR,  
+                       relief=StyleConfig.BUTTON_STYLE, 
+                       padx=StyleConfig.BUTTON_PADDING, 
+                       pady=StyleConfig.BUTTON_PADDING)
     
-        # Update background color of the main frame and toolbar
-        self.configure(bg=StyleConfig.BG_COLOR)
+        # Update Sidebar Labels
+        self.banking_label.config(bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
+        self.investment_label.config(bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
+    
+        # Update Sidebar Account Lists
+        self.accounts_list.config(bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
+        self.investments_list.config(bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
+    
+        # Update Search Label in Toolbar
+        self.search_label.config(bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
+        self.search_entry.config(bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
+    
+        # Ensure the colors update immediately
+        self.update_idletasks()
         
     def updateTable(self, df:pd.DataFrame) -> None:
         """comment"""
@@ -1317,7 +1498,7 @@ class Dashboard(tk.Frame):
             
             self.tree.insert("", tk.END, values=formatted_row)
 
-        Tables.applyBandedRows(self.tree, StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2)
+        Tables.applyBandedRows(self.tree, colors=[StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2])
         
         # Update accounts listbox
         self.updateBankingAccountsToolbox(df)

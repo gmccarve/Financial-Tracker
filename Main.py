@@ -38,7 +38,7 @@ class FinanceTracker(tk.Tk):
         self.initMenuBar()
         self.bindShortcuts()
         
-        self.loadUserSettings()
+        #self.loadUserSettings()
         
         self.current_frame = Dashboard(self)
         self.current_frame.pack(fill='both', expand=True)
