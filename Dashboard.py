@@ -218,10 +218,10 @@ class DataManager:
                         "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Credit.csv",
                         "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Hyundai Loan.csv",
                         "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Savings.csv", 
-                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/Capital One Credit.csv",
-                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Checking.csv",
-                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Credit.csv",
-                        "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Savings.csv"
+                        #"C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/Capital One Credit.csv",
+                        #"C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Checking.csv",
+                        #"C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Credit.csv",
+                        #"C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Savings.csv"
                         ]        
         
         if not file_paths:
@@ -329,26 +329,26 @@ class DataManager:
             (df["Deposit"] >= 0.00).all() and
             (df["Balance"] == 0.00).all()
         ):
-            case = 2
+            case = "Type 1"
         elif (
             (df["Payment"] >= 0.00).all() and
             (df["Deposit"] <= 0.00).all() and
             (df["Balance"] == 0.00).all()
         ):
-            case = 3
+            case = "Type 2"
         elif (
             (df["Payment"] >= 0.00).all() and
             (df["Deposit"] >= 0.00).all() and
             (df["Balance"] == 0.00).all()
         ):
-            case = 4
+            case = "Type 3"
         elif (
             (df["Payment"] >= -999999.00).all() and 
             (df["Deposit"] == 0.00).all()
         ):
-            case = 5
+            case = "Type 4"
         else:
-            case = 6
+            case = "Type 0"
     
         # Select only the relevant columns in the correct order
         df = df[expected_headers]
@@ -477,7 +477,7 @@ class TransactionManager:
     
                 elif header == "Date":
                     if not value.strip():
-                        value = "1970-01-01"
+                        value = dashboard.day_one
                     
                     valid_date = False
                     date_formats = ["%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y", "%d %b %Y", "%b %d, %Y"]
@@ -661,6 +661,8 @@ class Dashboard(tk.Frame):
             "Note": 200, 
             "Account Type": 100
         }
+        
+        self.day_one = "1970-1-1"
         
         self.initial_account_balances = {}
         self.account_cases = {}
@@ -1036,7 +1038,7 @@ class Dashboard(tk.Frame):
     
             # Ensure account entry in dictionary is always a list [date, balance]
             if account not in self.initial_account_balances or not isinstance(self.initial_account_balances[account], list):
-                self.initial_account_balances[account] = ["1970-01-01", 0.00]  # Default balance
+                self.initial_account_balances[account] = [self.day_one, 0.00]  # Default balance
     
             # Date entry
             date_var = tk.StringVar(value=self.initial_account_balances[account][0])
@@ -1044,7 +1046,7 @@ class Dashboard(tk.Frame):
             date_entry.grid(row=row, column=1, padx=5, pady=5)
     
             # Balance entry
-            balance_var = tk.StringVar(value=f"{self.initial_account_balances.get(account, ['1970-01-01', 0.00])[1]:.2f}")
+            balance_var = tk.StringVar(value=f"{self.initial_account_balances[account][1]/100:.2f}")
             balance_entry = tk.Entry(balance_window, textvariable=balance_var, width=10)
             balance_entry.grid(row=row, column=2, padx=5, pady=5)
     
@@ -1098,7 +1100,7 @@ class Dashboard(tk.Frame):
             for account, (date_var, balance_var) in entry_fields.items():
                 try:
                     date_value = date_var.get()
-                    balance_value = float(balance_var.get())
+                    balance_value = int(float(balance_var.get()) * 100)
     
                     self.initial_account_balances[account] = [date_value, balance_value]
                 except ValueError:
@@ -1133,28 +1135,110 @@ class Dashboard(tk.Frame):
         balance_window.bind("<Escape>", closeWindow)
     
         balance_window.focus_force()
-        
-        
+           
     def updateBalancesInDataFrame(self):
-        #TODO
-        """Propagates balance changes in the transactions DataFrame."""
+        """Propagates balance changes in the transactions DataFrame based on account types."""
+    
         if self.master.all_data.empty:
             return
     
         for account, (date_str, balance) in self.initial_account_balances.items():
-            # Convert string to datetime
-            date_value = datetime.strptime(date_str, StyleConfig.DATE_FORMAT).date()
+            if date_str != self.day_one:
+                self.master.all_data = self.calculateBalancesPerType(self.master.all_data.copy(), account, date_str, balance)
     
-            # Filter all transactions for this account
-            mask = (self.master.all_data["Account"] == account) & (self.master.all_data["Date"] >= date_value)
-    
-            # Sort transactions in ascending order
-            self.master.all_data.loc[mask, "Balance"] = balance
-    
-            # Propagate balance forward for subsequent transactions
-            self.master.all_data.loc[mask, "Balance"] = self.master.all_data.loc[mask, "Balance"].ffill()
-    
+        # Update UI
         self.updateTable(self.master.all_data)
+        
+    def calculateBalancesPerType(self, df: pd.DataFrame, account: str, given_date: str, given_balance: float) -> pd.DataFrame:
+        """
+        Calculates balances for all transactions in an account based on its type, given a known balance on a specific date.
+    
+        Parameters:
+            df (pd.DataFrame): DataFrame containing transactions.
+            account (str): Account name to filter transactions.
+            given_date (str): Known date in 'YYYY-MM-DD' format.
+            given_balance (float): Known balance on that date.
+            account_type (str): The category of the account (Type 1, Type 2, etc.).
+    
+        Returns:
+            pd.DataFrame: Updated DataFrame with recalculated balances.
+        """
+        
+        # Ensure the 'Date' column is in datetime format
+        df["Date"] = pd.to_datetime(df["Date"])
+    
+        # Filter transactions for the specified account
+        account_df = df[df["Account"] == account].copy()
+    
+        # Sort transactions by date to ensure proper balance propagation
+        account_df = account_df.sort_values(by="Date")
+    
+        # Find the index of the transaction that has the given date
+        reference_idx = account_df[account_df["Date"] == given_date].index.min()
+        
+        # Get account type
+        account_type = self.account_cases[account]
+        
+        if pd.isna(reference_idx):
+    
+            # Find the nearest previous transaction
+            previous_idx = account_df[account_df["Date"] < given_date].index.max()
+            next_idx = account_df[account_df["Date"] > given_date].index.min()
+    
+            if not pd.isna(previous_idx):
+                reference_idx = previous_idx
+            elif not pd.isna(next_idx):
+                reference_idx = next_idx
+            else:
+                return df  # Exit if no valid transactions exist
+        
+        # Set the balance for the known transaction
+        account_df.at[reference_idx, "Balance"] = given_balance
+    
+        # Forward propagate balance for later transactions
+        for i in range(reference_idx, reference_idx+len(account_df)):
+            if i == reference_idx:
+                prev_balance = given_balance
+            else:
+                prev_balance = account_df.at[i - 1, "Balance"]
+            deposit = account_df.at[i, "Deposit"]
+            payment = account_df.at[i, "Payment"]
+    
+            if account_type == "Type 1":
+                account_df.at[i, "Balance"] = prev_balance + payment + deposit  # (-) Payments, (+) Deposit, 0.00 Balance
+            elif account_type == "Type 2":
+                account_df.at[i, "Balance"] = prev_balance - payment - deposit  # (+) Payments, (-) Deposit, 0.00 Balance
+            elif account_type == "Type 3":
+                account_df.at[i, "Balance"] = prev_balance + deposit - payment  # Normal case
+            elif account_type == "Type 4":
+                account_df.at[i, "Balance"] = prev_balance + payment  # Deposits are ignored
+            else:
+                return df 
+            
+        #TODO
+        """
+        # Backward propagate balance for earlier transactions
+        for i in range(reference_idx - 1, -1, -1):
+            next_balance = account_df.at[i + 1, "Balance"]
+            deposit = account_df.at[i, "Deposit"]
+            payment = account_df.at[i, "Payment"]
+    
+            if account_type == "Type 1":
+                account_df.at[i, "Balance"] = next_balance - deposit
+            elif account_type == "Type 2":
+                account_df.at[i, "Balance"] = next_balance + payment
+            elif account_type == "Type 3":
+                account_df.at[i, "Balance"] = next_balance - deposit + payment
+            elif account_type == "Type 4":
+                account_df.at[i, "Balance"] = next_balance - payment  # Deposits are ignored
+            else:
+                return df
+        """
+                
+        # Merge updated balances back into the original DataFrame
+        df.update(account_df)
+    
+        return df    
 
     def retrieveData(self):
         """
@@ -1175,7 +1259,7 @@ class Dashboard(tk.Frame):
                 self.account_cases[account_name] = case
                 
                 if account_name not in self.initial_account_balances:
-                    self.initial_account_balances[account_name] = ["1970-01-01", 0.00]
+                    self.initial_account_balances[account_name] = [self.day_one, 0.00]
     
         if all_parsed_data:
             # Combine all parsed data into a single DataFrame
@@ -1184,11 +1268,7 @@ class Dashboard(tk.Frame):
             # Store processed data in the app and update UI
             self.master.all_data = final_df.copy()
             self.master.all_data = DataFrameProcessor.getDataFrameIndex(self.master.all_data)
-            self.updateTable(self.master.all_data.copy())
-            
-        print (self.account_cases)
-            
-            
+            self.updateTable(self.master.all_data.copy())  
             
     def addTransaction(self):
         """Calls TransactionManager.addTransaction, passing the Dashboard instance."""
@@ -1753,18 +1833,22 @@ class Dashboard(tk.Frame):
     def updateBankingAccountsToolbox(self, df: pd.DataFrame) -> None:
         """Updates the sidebar listbox with only banking accounts and their balances."""
         self.accounts_list.delete(0, tk.END)  # Clear previous entries
-     
-        # Filter only banking accounts
-        banking_df = df[df["Account Type"] == "Banking"]
 
-        # Calculate account balances
-        self.account_balances = DataFrameProcessor.accountBalance(banking_df)
-     
         # Add "All Banking Accounts" option
         self.accounts_list.insert(tk.END, "All Banking Accounts")
      
         # Insert individual banking accounts
-        for account, balance in self.account_balances.items():
+        for account, (date_str, first_balance) in self.initial_account_balances.items():
+            
+            last_balance = df[df['Account'] == account].sort_values(by="Date")["Balance"].iloc[-1] if not df.loc[df["Account"] == account, "Balance"].empty else 0.00
+
+            #TODO add function to add self.latest_balance to avoid changing these values when a separate account is viewed.
+
+            if last_balance == 0.00:
+                balance = first_balance
+            else:
+                balance = last_balance            
+            
             self.accounts_list.insert(tk.END, f"{account} ${balance / 100:.2f}")  # Format balance
             
     def updateInvestmentAccountsToolbox(self, df: pd.DataFrame) -> None:
@@ -1803,7 +1887,7 @@ class Dashboard(tk.Frame):
             return
         
         selected_text = self.accounts_list.get(selected_index)
-        
+
         if selected_text == "All Banking Accounts":
             filtered_df = self.master.all_data.copy()
         else:
