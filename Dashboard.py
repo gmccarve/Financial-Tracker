@@ -665,6 +665,7 @@ class Dashboard(tk.Frame):
         self.day_one = "1970-1-1"
         
         self.initial_account_balances = {}
+        self.current_account_balances = {}
         self.account_cases = {}
         
         self.category_file = os.path.join(os.path.dirname(__file__), "Categories.txt")
@@ -1144,7 +1145,9 @@ class Dashboard(tk.Frame):
     
         for account, (date_str, balance) in self.initial_account_balances.items():
             if date_str != self.day_one:
-                self.master.all_data = self.calculateBalancesPerType(self.master.all_data.copy(), account, date_str, balance)
+                self.master.all_data, self.current_account_balances[account] = self.calculateBalancesPerType(self.master.all_data.copy(), account, date_str, balance)
+    
+                print (self.current_account_balances[account])
     
         # Update UI
         self.updateTable(self.master.all_data)
@@ -1215,6 +1218,8 @@ class Dashboard(tk.Frame):
             else:
                 return df 
             
+        last_balance = account_df.at[i, 'Balance']
+            
         #TODO
         """
         # Backward propagate balance for earlier transactions
@@ -1234,11 +1239,11 @@ class Dashboard(tk.Frame):
             else:
                 return df
         """
-                
+        
         # Merge updated balances back into the original DataFrame
         df.update(account_df)
     
-        return df    
+        return df, last_balance
 
     def retrieveData(self):
         """
@@ -1260,6 +1265,7 @@ class Dashboard(tk.Frame):
                 
                 if account_name not in self.initial_account_balances:
                     self.initial_account_balances[account_name] = [self.day_one, 0.00]
+                    self.current_account_balances[account_name] = 0.00
     
         if all_parsed_data:
             # Combine all parsed data into a single DataFrame
@@ -1838,17 +1844,7 @@ class Dashboard(tk.Frame):
         self.accounts_list.insert(tk.END, "All Banking Accounts")
      
         # Insert individual banking accounts
-        for account, (date_str, first_balance) in self.initial_account_balances.items():
-            
-            last_balance = df[df['Account'] == account].sort_values(by="Date")["Balance"].iloc[-1] if not df.loc[df["Account"] == account, "Balance"].empty else 0.00
-
-            #TODO add function to add self.latest_balance to avoid changing these values when a separate account is viewed.
-
-            if last_balance == 0.00:
-                balance = first_balance
-            else:
-                balance = last_balance            
-            
+        for account, balance in self.current_account_balances.items():    
             self.accounts_list.insert(tk.END, f"{account} ${balance / 100:.2f}")  # Format balance
             
     def updateInvestmentAccountsToolbox(self, df: pd.DataFrame) -> None:
