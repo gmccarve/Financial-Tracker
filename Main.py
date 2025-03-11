@@ -39,18 +39,14 @@ class FinanceTracker(tk.Tk):
         self.initMenuBar()
         self.bindShortcuts()
         
-        #self.loadUserSettings()
-        
-        self.current_frame = Dashboard(self)
-        self.current_frame.pack(fill='both', expand=True)
-        
-        self.current_frame.applyStyleChanges()  # Explicitly apply styles after settings load
-        
-        self.all_data = pd.DataFrame()
-        
         self.save_file_loc = os.path.join(os.path.dirname(__file__), "lastSavedFile.txt")
         self.save_file = self.readSaveFile()
-
+        
+        self.user_settings_file = os.path.join(os.path.dirname(__file__), "user_settings.pkl")
+        
+        self.current_frame = Dashboard(self)
+        self.current_frame.grid(row=0, column=0, sticky="nsew")
+        
         return
 
     def initMenuBar(self):
@@ -58,7 +54,7 @@ class FinanceTracker(tk.Tk):
         menubar = tk.Menu(self)
         
         file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="Open", command=lambda: self.current_frame.retrieveData(), accelerator="Ctrl+O")
+        file_menu.add_command(label="Open", command=lambda: self.current_frame.openData(), accelerator="Ctrl+O")
         file_menu.add_command(label="Save", command=lambda: self.current_frame.saveData(), accelerator="Ctrl+S")
         file_menu.add_command(label="Save as", command=lambda: self.current_frame.saveDataAs(), accelerator="Ctrl+Shift+S")
         file_menu.add_command(label="New", command=lambda event: self.current_frame.clearTable(), accelerator="Ctrl+N")
@@ -77,7 +73,6 @@ class FinanceTracker(tk.Tk):
         
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
-
         
         self.config(menu=menubar)
     
@@ -85,36 +80,36 @@ class FinanceTracker(tk.Tk):
         """Bind keyboard shortcuts to functions."""
         self.bind("<Control-a>", lambda event: self.current_frame.selectAllRows())
         #self.bind("<Control-b>")
-        #self.bind("<Control-c>",)
+        #self.bind("<Control-c>")
         #self.bind("<Control-d>")
-        #self.bind("<Control-e>", lambda event: self.editInitialValues())
-        #self.bind("<Control-f>",)
-        #self.bind("<Control-g>",)
-        #self.bind("<Control-h>",)
+        #self.bind("<Control-e>")
+        self.bind("<Control-f>", lambda event: self.current_frame.openSearch())
+        #self.bind("<Control-g>")
+        #self.bind("<Control-h>")
         #self.bind("<Control-i>")
-        #self.bind("<Control-j>",)
-        #self.bind("<Control-k>",)
+        #self.bind("<Control-j>")
+        #self.bind("<Control-k>")
         #self.bind("<Control-l>")
         #self.bind("<Control-m>",)
         self.bind("<Control-n>", lambda event: self.current_frame.clearTable())
-        self.bind("<Control-o>", lambda event: self.current_frame.retrieveData())
-        #self.bind("<Control-p>",)
-        #self.bind("<Control-q>",)
-        #self.bind("<Control-r>", lambda event: self.reloadData())
+        self.bind("<Control-o>", lambda event: self.current_frame.openData())
+        #self.bind("<Control-p>")
+        #self.bind("<Control-q>")
+        #self.bind("<Control-r>")
         self.bind("<Control-s>", lambda event: self.current_frame.saveData())
         self.bind("<Control-S>", lambda event: self.current_frame.saveDataAs())
-        #self.bind("<Control-t>",)
+        #self.bind("<Control-t>")
         #self.bind("<Control-u>", lambda event: self.updateData())
-        #self.bind("<Control-v>",)
+        #self.bind("<Control-v>")
         self.bind("<Control-w>", lambda event: self.closeWindow())
-        #self.bind("<Control-x>",)
-        #self.bind("<Control-y>",)
-        #self.bind("<Control-z>",)
+        #self.bind("<Control-x>")
+        #self.bind("<Control-y>")
+        #self.bind("<Control-z>")
         
         self.bind("<Escape>",    lambda event: self.closeWindow())
 
         # Bind Delete key to deleteTransaction only if a row is selected
-        self.bind("<Delete>", lambda event: self.current_frame.deleteTransaction() if self.current_frame.tree.selection() else None)
+        self.bind("<Delete>", lambda event: self.current_frame.deleteTransaction())
         
         return        
       
@@ -128,29 +123,17 @@ class FinanceTracker(tk.Tk):
         self.destroy()
         
     def readSaveFile(self):
-        with open(self.save_file_loc, 'r') as f:
-            save_file = f.readlines()
-            
-        return save_file[0]
-    
-    def loadUserSettings(self):
-        """Loads saved user settings from file and applies them dynamically."""
         try:
-            with open("user_settings.pkl", "rb") as f:
-                settings = pickle.load(f)
-                for key, value in settings.items():
-                    setattr(StyleConfig, key, value)
+            with open(self.save_file_loc, 'r') as f:
+                save_file = f.readlines()
+            return save_file[0]
+        except:
+            return ''
     
-        except FileNotFoundError:
-            # No previous settings, load defaults dynamically
-            for key, value in StyleConfig.get_default_settings().items():
-                setattr(StyleConfig, key, value)
-                
-        if hasattr(self, 'current_frame') and isinstance(self.current_frame, Dashboard):
-            self.current_frame.applyStyleChanges()  # Reapply styles to UI elements
-
-
-
+    def changeSaveFile(self):
+        with open(self.save_file_loc, 'w') as f:
+            f.write(self.save_file)
+        return
         
         
 if __name__ == "__main__":

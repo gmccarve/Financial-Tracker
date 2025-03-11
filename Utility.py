@@ -153,9 +153,9 @@ class Tables:
         def convertValue(val):
             """Converts currency values ($XXX.XX) to float for sorting."""
             try:
-                return float(val.replace("$", "").replace(",", "").replace("%", ""))  # Remove $ and convert to float
+                return float(val.replace("$", "").replace(",", "").replace("%", ""))
             except ValueError:
-                return val  # Return as-is if not convertible (handles text columns)
+                return val.lower()
             
         # Get values and sort correctly
         l = [(convertValue(tv.set(k, col)), k) for k in tv.get_children('')]
@@ -181,4 +181,6 @@ class Tables:
         tv.tag_configure("evenrow", background=colors[0])
         tv.tag_configure("oddrow", background=colors[1]) 
         
-        
+class Classifier:
+    
+    x = 5

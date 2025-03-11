@@ -1,44 +1,82 @@
+
 Airfare
+Bonus
+Books & Magazines
+Business Expenses
 Car Insurance
 Car Maintenance
-Cat
+Car Payment
+Cash Back
+Cell Phone
+Charitable Donations
+Childcare Expenses
+Coffee Shops
 Credit Card Payment
 Dining
-Eating Out
-Electricity
+Dining Out
+Dividend Income
+Education
 Entertainment
-Furniture
+Financial Fees
+Freelance Income
+Furniture & Appliances
 Gas
-Gas/Automotive
+Gifts
 Groceries
-House Goods
+Gym Membership
+Health & Fitness
+Hobbies & Recreation
+Home Goods
+Household Supplies
+Insurance
+Interest Income
 Interest Payment
-Internet
 Investments
+Legal Fees
+Liqour
+Loan Payments
 Lodging
-Medical
+Medical Expenses
 Merchandise
-Miscellaneous
-Not Assigned
+Miscellaneous Expenses
+Mortgage Insurance
+Moving Expenses
+Office Supplies
 Other
+Other Income
 Other Services
 Other Travel
-Paycheck
+Parking Fees
 Payment/Credit
-Phone
+Personal Care
+Pet Expenses
 Phone/Cable
+Prescription Drugs
 Professional Services
-Recreation & Entertainment
 Refund
-Rent
-Shopping
-Student Loan Payment
+Rent/Mortgage
+Repairs & Maintenance
+Salary/Paycheck
+Shopping - Clothing
+Shopping - Electronics
+Shopping - Home & Garden
+Streaming Services
+Student Loans
 Subscriptions
-Technology
-Transfer from Checking
-Transfer from Savings
-Transfer to Checking
-Transfer to Savings
-Travel
+Tax Refund
+Taxes
+Tolls
+Transfer from Checking to Savings
+Transfer from Savings to Checking
+Transportation - Gas
+Transportation - Public Transit
+Transportation - Ride Sharing
+Travel - Airfare
+Travel - Car Rental
+Travel - Hotels
+Travel - Meals
+Utilities - Electricity
+Utilities - Gas
+Utilities - Internet/WiFi
+Utilities - Water
 Work
-test
