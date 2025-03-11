@@ -69,6 +69,7 @@ class FinanceTracker(tk.Tk):
         menubar.add_cascade(label="Reports", menu=reports_menu)
         
         tools_menu = tk.Menu(menubar, tearoff=0)
+        #tools_menu.add_command(label="Train Classifier", command=lambda: self.current_frame.trainClassifier(), accelerator="Ctrl+T")
         menubar.add_cascade(label="Tools", menu=tools_menu)
         
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -98,7 +99,7 @@ class FinanceTracker(tk.Tk):
         #self.bind("<Control-r>")
         self.bind("<Control-s>", lambda event: self.current_frame.saveData())
         self.bind("<Control-S>", lambda event: self.current_frame.saveDataAs())
-        #self.bind("<Control-t>")
+        self.bind("<Control-t>", lambda event: self.current_frame.trainClassifier())
         #self.bind("<Control-u>", lambda event: self.updateData())
         #self.bind("<Control-v>")
         self.bind("<Control-w>", lambda event: self.closeWindow())

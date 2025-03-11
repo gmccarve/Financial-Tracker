@@ -4,6 +4,12 @@ import pickle
 from datetime import datetime, timedelta
 from tkinter import messagebox, filedialog, ttk
 from typing import List, Tuple, Union
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 
 from StyleConfig import StyleConfig
 
@@ -183,4 +189,125 @@ class Tables:
         
 class Classifier:
     
-    x = 5
+    def trainPayeeAndCategoryClassifier(df: pd.DataFrame) -> Tuple[Pipeline, Pipeline]:
+        """
+        Trains two machine learning pipelines to predict the Payee and Category for a transaction,
+        based on the following input features:
+        - Description (text)
+        - Payment (numeric, assumed to be in cents)
+        - Deposit (numeric, assumed to be in cents)
+        - Account (categorical)
+
+        The function uses a ColumnTransformer to process the features:
+        - "Description" is vectorized via TF-IDF.
+        - "Payment" and "Deposit" are scaled using StandardScaler.
+        - "Account" is one-hot encoded.
+        
+        Two separate Logistic Regression classifiers are then trained—one for Payee and one for Category.
+        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame containing the following columns:
+            - "Description": Transaction description (string)
+            - "Payment": Payment amount (numeric, in cents)
+            - "Deposit": Deposit amount (numeric, in cents)
+            - "Account": Account name (string)
+            - "Payee": Target label for payee (string)
+            - "Category": Target label for category (string)
+        
+        Returns
+        -------
+        Tuple[Pipeline, Pipeline]
+            A tuple (payee_pipeline, category_pipeline) where each pipeline is a scikit‑learn Pipeline
+            that has been fitted to the training data.
+        
+        Raises
+        ------
+        ValueError
+            If any required column is missing or if no training data is available.
+        """
+        required_cols = ["Description", "Payment", "Deposit", "Account", "Payee", "Category"]
+        for col in required_cols:
+            if col not in df.columns:
+                raise ValueError(f"Missing required column: {col}")
+        
+        # Drop rows where either target is missing or blank
+        train_df = df[
+            df["Payee"].notnull() & (df["Payee"].str.strip() != "") &
+            df["Category"].notnull() & (df["Category"].str.strip() != "")
+        ].copy()
+        if train_df.empty:
+            raise ValueError("No training data available after filtering missing targets.")
+
+        # Define the input features
+        features = ["Description", "Payment", "Deposit", "Account"]
+        
+        # Create a preprocessor that handles different columns appropriately.
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ("desc", TfidfVectorizer(stop_words="english"), "Description"),
+                ("num", StandardScaler(), ["Payment", "Deposit"]),
+                ("acct", OneHotEncoder(handle_unknown="ignore"), ["Account"])
+            ]
+        )
+        
+        # Define and train the pipeline for Payee prediction.
+        payee_pipeline = Pipeline(steps=[
+            ("preprocessor", preprocessor),
+            ("classifier", RandomForestClassifier(n_estimators=250, max_depth=10))
+        ])
+        payee_pipeline.fit(train_df[features], train_df["Payee"])
+        
+        # Define and train the pipeline for Category prediction.
+        category_pipeline = Pipeline(steps=[
+            ("preprocessor", preprocessor),
+            ("classifier", RandomForestClassifier(n_estimators=250, max_depth=10))
+        ])
+        category_pipeline.fit(train_df[features], train_df["Category"])
+        
+        return payee_pipeline, category_pipeline
+
+    def predictTransactionLabels(
+        description: str,
+        payment: float,
+        deposit: float,
+        account: str,
+        payee_pipeline: Pipeline,
+        category_pipeline: Pipeline
+    ) -> Tuple[str, str]:
+        """
+        Predicts the Payee and Category for a transaction based on the input features.
+
+        Parameters
+        ----------
+        description : str
+            The transaction's description.
+        payment : float
+            The payment amount (in cents).
+        deposit : float
+            The deposit amount (in cents).
+        account : str
+            The account name.
+        payee_pipeline : Pipeline
+            A trained scikit‑learn pipeline for predicting the Payee.
+        category_pipeline : Pipeline
+            A trained scikit‑learn pipeline for predicting the Category.
+        
+        Returns
+        -------
+        Tuple[str, str]
+            A tuple (predicted_payee, predicted_category).
+        """
+        # Create a single-row DataFrame with the input features.
+        input_df = pd.DataFrame([{
+            "Description": description,
+            "Payment": payment,
+            "Deposit": deposit,
+            "Account": account
+        }])
+        
+        predicted_payee = payee_pipeline.predict(input_df)[0]
+        predicted_category = category_pipeline.predict(input_df)[0]
+        
+        return predicted_payee, predicted_category

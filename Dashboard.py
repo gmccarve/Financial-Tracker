@@ -204,21 +204,8 @@ class DataManager:
                 csv_files (List[str])  - list of .csv paths if found (empty if pkl_file is found).
         """
         # Prompt user to pick multiple files
-        #file_paths = filedialog.askopenfilenames(
-        #    filetypes=[("CSV and PKL files", "*.csv *.pkl")])
-        
-        #"""
-        file_paths = ["C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/2025_testing.pkl"
-                        #"C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Checking.csv",
-                        #"C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Credit.csv",
-                        #"C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Hyundai Loan.csv",
-                        #"C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/AFCU Savings.csv", 
-                        #"C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/Capital One Credit.csv",
-                        #"C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Checking.csv",
-                        #"C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Credit.csv",
-                        #"C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/PFCU Savings.csv"
-                        ]     
-        #"""
+        file_paths = filedialog.askopenfilenames(
+            filetypes=[("CSV and PKL files", "*.csv *.pkl")])
         
         if not file_paths:
             return None, []
@@ -453,7 +440,7 @@ class DataManager:
         with open(file_path, "wb") as f:
             pickle.dump({"Transaction Data": transaction_data, 
                          "Initial Balances": initial_balances, 
-                         "Account Types": account_types}, 
+                         "Account Types": {key.replace('.csv', ''): value for key, value in account_types.items()}}, 
                          f)
         
         messagebox.showinfo("Save Complete", f"Data saved to {file_path}")  
@@ -465,38 +452,7 @@ class DataManager:
         
         if save_file == '':
             return pd.DataFrame, {}
-        
-        """
-        print ("*ERPW*EOUFPO*UWEPFOJIPWE(*FU)")
-
-        file_path1 = "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/acc_types.pkl"
-        file_path2 = "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/init_data.pkl"
-        file_path3 = "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/all_data.pkl"
-        file_path4 = "C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/2025_testing.pkl"
-
-        with open(file_path1, "rb") as f:
-            acc_types = pickle.load(f)
-
-        with open(file_path2, "rb") as f:
-            init_data = pickle.load(f)
-
-        with open(file_path3, "rb") as f:
-            all_data = pickle.load(f)
-
-        with open(file_path4, "wb") as f:
-            pickle.dump({"Transaction Data": all_data, 
-                          "Initial Balances": init_data, 
-                          "Account Types": acc_types}, 
-                          f)
-
-        print ("HERE")
-        """
-
-        #with open("C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/2025_testing.pkl", "rb") as f:
-        #    all_data = pickle.load(f)
-
-        #print (all_data)
-        
+                
         try:
             with open(save_file, "rb") as f:
                 data = pickle.load(f)
@@ -677,7 +633,6 @@ class TransactionManager:
         submit_button.grid(row=len(headers), column=0, columnspan=2, pady=10)
     
         submit_button.focus_set()
-    
     @staticmethod 
     def deleteTransaction(dashboard_actions: "Dashboard", dashboard: "Dashboard") -> None:
         """Deletes the selected transaction(s) from the data table."""
@@ -881,12 +836,38 @@ class DashboardUI(tk.Frame):
         
         # Bind double-click event to filter transactions
         self.investments_list.bind("<Double-Button-1>",  self.actions_manager.filterTransactionsByInvestmentAccount)
-         
-        """     
-        ttk.Label(self.sidebar, text="Reports", font=(StyleConfig.FONT_FAMILY, StyleConfig.SUB_FONT_SIZE, "bold")).pack(anchor='w', pady=5)
-        self.reports_list = tk.Listbox(self.sidebar, height=4, width=45)  # Increased width
-        self.reports_list.pack(fill='x', padx=5, pady=2)
+            
         
+        # Reports Listbox
+        self.reports_label = tk.Label(
+            self.sidebar, 
+            text="Reports",
+            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
+            bg=StyleConfig.BG_COLOR, 
+            fg=StyleConfig.TEXT_COLOR
+            )
+        self.reports_label.pack(anchor='center', pady=5)
+    
+        # Add a frame to contain the listbox and scrollbar
+        self.reports_listbox_frame = ttk.Frame(self.sidebar)
+        self.reports_listbox_frame.pack(fill="x", padx=5, pady=2)
+        
+        # Create listbox with a scrollbar
+        self.reports_list = tk.Listbox(self.reports_listbox_frame, height=6, width=35)
+        self.reports_list.pack(side=tk.LEFT, fill='x', expand=True)
+    
+        # Add scrollbar for smooth scrolling
+        self.reports_scrollbar = ttk.Scrollbar(self.reports_listbox_frame, orient=tk.VERTICAL, command=self.reports_list.yview)
+        self.reports_scrollbar.pack(side=tk.RIGHT, fill='y')
+        self.reports_list.config(yscrollcommand=self.reports_scrollbar.set)
+    
+        # Bind smooth scrolling behavior
+        self.reports_list.bind("<MouseWheel>",  self.actions_manager.smoothScroll)
+        
+        # Bind double-click event to filter transactions
+        self.reports_list.bind("<Double-Button-1>",  self.actions_manager.displayReports)
+        
+        """
         ttk.Label(self.sidebar, text="Actions", font=(StyleConfig.FONT_FAMILY, StyleConfig.SUB_FONT_SIZE, "bold")).pack(anchor='w', pady=5)
         self.actions_list = tk.Listbox(self.sidebar, height=4, width=45)  # Increased width
         self.actions_list.pack(fill='x', padx=5, pady=2)
@@ -920,7 +901,7 @@ class DashboardUI(tk.Frame):
             ("Category",    "category.png", self.actions_manager.viewCategories),
             ("Banking",     "banking.png",  lambda: self.actions_manager.filterByAccountType("Banking")),
             ("Stocks",      "stonks.png",   lambda: self.actions_manager.filterByAccountType("Investments")),
-            ("Budget",      "budget.png",   self.actions_manager.viewBudget),
+            ("Reports",     "budget.png",   self.actions_manager.displayReports),
             ("Export",      "export.png",   self.actions_manager.exportData),
             ("Options",     "options.png",  self.actions_manager.viewOptions),
         ]
@@ -1091,6 +1072,9 @@ class DashboardUI(tk.Frame):
         self.payee_label.config(bg=StyleConfig.BG_COLOR, 
                                    fg=StyleConfig.TEXT_COLOR, 
                                    font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"))
+        self.reports_label.config(bg=StyleConfig.BG_COLOR, 
+                                   fg=StyleConfig.TEXT_COLOR, 
+                                   font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"))
     
         # Update Sidebar Account Lists
         self.accounts_list.config(bg=StyleConfig.BG_COLOR, 
@@ -1103,6 +1087,9 @@ class DashboardUI(tk.Frame):
                                   fg=StyleConfig.TEXT_COLOR, 
                                   font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
         self.payee_list.config(bg=StyleConfig.BG_COLOR, 
+                                  fg=StyleConfig.TEXT_COLOR, 
+                                  font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
+        self.reports_list.config(bg=StyleConfig.BG_COLOR, 
                                   fg=StyleConfig.TEXT_COLOR, 
                                   font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
     
@@ -1440,11 +1427,13 @@ class DashboardActions:
             colors=[StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2]
         )
         
-        #self.updateBalancesInDataFrame() 
-        #self.updateBankingAccountsToolbox(df)
-        #self.updateInvestmentAccountsToolbox(df)
         self.updateCategoryToolbox(df)
-        self.updatePayeeToolbox(df)
+        self.updatePayeeToolbox(df)        
+        self.updateInvestmentAccountsToolbox(df)
+
+        self.updateBankingAccountsToolbox(df)
+        self.updateBalancesInDataFrame() 
+        self.updateBankingAccountsToolbox(df)
         
     def sortTableByColumn(self, tv: ttk.Treeview, col: str, sort_direction: bool) -> None:
         """
@@ -1473,23 +1462,38 @@ class DashboardActions:
         )
             
     def updateBankingAccountsToolbox(self, df: pd.DataFrame) -> None:
-        #TODO
-        """Updates the sidebar listbox with only banking accounts and their balances."""
+        """
+        Updates the sidebar listbox with banking accounts and their balances.
+        
+        This function clears the existing entries in the accounts listbox, then adds a default
+        "All Banking Accounts" option followed by each individual account from the current
+        account balances. Each balance is formatted (converted from cents to dollars with two decimal places).
+        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            A DataFrame representing transaction data (not directly used in this function).
+        
+        Returns
+        -------
+        None
+            Updates the UI in-place.
+        """
+        # Clear previous entries from the accounts listbox
         self.widget_dashboard.accounts_list.delete(0, tk.END)  # Clear previous entries
 
-        # Add "All Banking Accounts" option
+        # Insert default "All Banking Accounts" option
         self.widget_dashboard.accounts_list.insert(tk.END, "All Banking Accounts")
      
-        # Insert individual banking accounts
+        # Insert individual banking accounts with their balances formatted as dollars
         for account, balance in self.main_dashboard.current_account_balances.items():    
             self.widget_dashboard.accounts_list.insert(tk.END, f"{account} ${balance / 100:.2f}")  # Format balance
         
-    def updateInvestmentAccountsToolbox(self):
+    def updateInvestmentAccountsToolbox(self, df: pd.DataFrame) -> None:
         #TODO
-        """
-        
-        """
+        """Updates the sidebar listbox with only investment accounts and their balances."""
         self
+
         
     def updateCategoryToolbox(self, df: pd.DataFrame) -> None:
         """
@@ -1559,62 +1563,127 @@ class DashboardActions:
         for payee in self.main_dashboard.payees:
             self.widget_dashboard.payee_list.insert(tk.END, payee)
 
-    def trackBankBalances(self):
-        #TODO
-        """Opens a window to manually track the latest balance for each banking account."""
+    def trackBankBalances(self) -> None:
+        """
+        Opens a Toplevel window to manually review and update the latest balance for each banking account.
+
+        The window displays three columns:
+        - Account name (from main_dashboard.all_data)
+        - Initial Date (loaded from main_dashboard.initial_account_balances or defaulted)
+        - Initial Value (converted from cents to dollars)
+
+        For each banking account:
+        1. If the account is not yet in the initial_account_balances DataFrame, a new row is appended
+            with a default date (self.main_dashboard.day_one) and a zero balance.
+        2. The corresponding row is retrieved to initialize entry widgets for date and balance.
+        3. The balance is shown in dollars (dividing the stored cents by 100).
+
+        Inner helper functions:
+        - validateInputs() -> bool: Validates the user input for each account.
+        - applyChanges() -> None: Updates the initial_account_balances DataFrame with the entered values,
+            then calls updateBalancesInDataFrame() and closes the window.
+        - closeWindow(event: tk.Event | None = None) -> None: Closes the balance window.
+
+        Returns
+        -------
+        None
+            The UI window is displayed, and when changes are applied, the DataFrame and UI are updated.
+        """
     
-        if "Account" not in self.master.all_data:
+        if "Account" not in self.main_dashboard.all_data:
             return
     
-        balance_window = tk.Toplevel(self)
+        balance_window = tk.Toplevel(self.main_dashboard)
         balance_window.title("Track Bank Balances")
     
-        # Labels
+        # Create header labels
         headers = ["Account", "Date", "Balance"]
         for col, header in enumerate(headers):
-            tk.Label(balance_window, text=header, font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
-                     bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR).grid(row=0, column=col, padx=5, pady=5)
+            tk.Label(balance_window, 
+                     text=header, 
+                     font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
+                     bg=StyleConfig.BG_COLOR, 
+                     fg=StyleConfig.TEXT_COLOR
+                     ).grid(row=0, column=col, padx=5, pady=5)
     
-        # Entry fields
+        # Dictionary to hold references to the entry widgets for each account
         entry_fields = {}
     
-        banking_accounts = self.master.all_data["Account"].unique().tolist()
+         # Get unique banking accounts from all_data
+        banking_accounts = self.main_dashboard.all_data["Account"].unique().tolist()
         for row, account in enumerate(banking_accounts, start=1):
-            tk.Label(balance_window, text=account, bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR).grid(row=row, column=0, padx=5, pady=5, sticky="w")
+            tk.Label(balance_window, 
+                     text=account, 
+                     bg=StyleConfig.BG_COLOR, 
+                     fg=StyleConfig.TEXT_COLOR
+                     ).grid(row=row, column=0, padx=5, pady=5, sticky="w")
     
-            # Ensure account entry in dictionary is always a list [date, balance]
-            if account not in self.initial_account_balances or not isinstance(self.initial_account_balances[account], list):
-                self.initial_account_balances[account] = [self.day_one, 0.00]  # Default balance
+            # If the account is not already in the initial_account_balances DataFrame, append a new row.
+            if account not in self.main_dashboard.initial_account_balances["Account"].values:
+                new_row = pd.DataFrame({
+                    "Account": [account],
+                    "Initial Date": [self.main_dashboard.day_one],
+                    "Initial Value": [0]
+                })
+                self.main_dashboard.initial_account_balances = pd.concat(
+                    [self.main_dashboard.initial_account_balances, new_row],
+                    ignore_index=True
+                )
     
-            # Date entry
-            date_var = tk.StringVar(value=self.initial_account_balances[account][0])
+            # Retrieve the row for the current account
+            account_row = self.main_dashboard.initial_account_balances[
+                self.main_dashboard.initial_account_balances["Account"] == account
+            ]
+            if not account_row.empty:
+                initial_date = account_row["Initial Date"].iloc[0]
+                initial_value = account_row["Initial Value"].iloc[0]
+            else:
+                # Fallback defaults if the account is not found.
+                initial_date = self.main_dashboard.day_one
+                initial_value = 0
+
+            # Date entry widget (shows the initial date)
+            date_var = tk.StringVar(value=initial_date)
             date_entry = tk.Entry(balance_window, textvariable=date_var, width=12)
             date_entry.grid(row=row, column=1, padx=5, pady=5)
-    
-            # Balance entry
-            balance_var = tk.StringVar(value=f"{self.initial_account_balances[account][1]/100:.2f}")
+
+            # Balance entry widget (converts cents to dollars for display)
+            balance_var = tk.StringVar(value=f"{initial_value / 100:.2f}")
             balance_entry = tk.Entry(balance_window, textvariable=balance_var, width=10)
             balance_entry.grid(row=row, column=2, padx=5, pady=5)
     
-            # Store references
+            # Store the Tk variables for later update
             entry_fields[account] = (date_var, balance_var)
             
         window_width, window_height = 300, (row+1)*31+60
-        Windows.openRelativeWindow(balance_window, main_width=self.winfo_x(), main_height=self.winfo_y(), width=window_width, height=window_height)
+        Windows.openRelativeWindow(balance_window, 
+                                   main_width=self.main_dashboard.winfo_x(), 
+                                   main_height=self.main_dashboard.winfo_y(), 
+                                   width=window_width, 
+                                   height=window_height
+                                   )
     
         # Button frame
         button_frame = tk.Frame(balance_window, bg=StyleConfig.BG_COLOR)
         button_frame.grid(row=len(banking_accounts) + 1, column=0, columnspan=3, pady=10)
         
-        def validateInputs():
-            """Validates that the date is in a correct format and the balance is a number."""
+        # --- Inner helper functions ---
+        def validateInputs() -> bool:
+            """
+            Validates that each account's date is in a correct format and that the balance is a valid number.
+
+            Returns
+            -------
+            bool
+                True if all inputs are valid; otherwise, False.
+            """
             date_formats = ["%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y", "%d %b %Y", "%b %d, %Y"]
             errors = []
     
             for account, (date_var, balance_var) in entry_fields.items():
                 date_value = date_var.get().strip()
                 balance_value = balance_var.get().strip()
-    
+
                 # Validate Date
                 valid_date = False
                 for fmt in date_formats:
@@ -1642,22 +1711,43 @@ class DashboardActions:
             return True
     
         def applyChanges():
-            """Save the entered balance and date to the dictionary and update DataFrame."""
+            """
+            Saves the entered date and balance for each account into the initial_account_balances DataFrame,
+            then propagates balance changes and closes the balance window.
+            """
             for account, (date_var, balance_var) in entry_fields.items():
                 try:
                     date_value = date_var.get()
                     balance_value = int(float(balance_var.get()) * 100)
-    
-                    self.initial_account_balances[account] = [date_value, balance_value]
                 except ValueError:
                     messagebox.showerror("Error", f"Invalid balance input for {account}. Please enter a number.")
                     return
-    
+
+                # Create a mask to find the row for this account
+                mask = self.main_dashboard.initial_account_balances["Account"] == account
+                if mask.any():
+                    # Update existing row
+                    self.main_dashboard.initial_account_balances.loc[mask, "Initial Date"] = date_value
+                    self.main_dashboard.initial_account_balances.loc[mask, "Initial Value"] = balance_value
+                else:
+                    # Append a new row if the account doesn't exist
+                    new_row = pd.DataFrame({
+                        "Account": [account],
+                        "Initial Date": [date_value],
+                        "Initial Value": [balance_value]
+                    })
+                    self.main_dashboard.initial_account_balances = pd.concat(
+                        [self.main_dashboard.initial_account_balances, new_row],
+                        ignore_index=True
+                    )
+
             self.updateBalancesInDataFrame()
             balance_window.destroy()
     
-        def closeWindow(event=None):
+        def closeWindow(event: tk.Event | None = None) -> None:
+            """Closes the balance tracking window."""
             balance_window.destroy()
+        # --- End inner functions ---
     
         # Buttons
         ok_button = tk.Button(button_frame, 
@@ -1682,24 +1772,42 @@ class DashboardActions:
     
         balance_window.focus_force()
            
-    def updateBalancesInDataFrame(self):
-        #TODO
-        """Propagates balance changes in the transactions DataFrame based on account types."""
-    
-        if self.master.all_data.empty:
+    def updateBalancesInDataFrame(self) -> None:
+        """
+        Propagates balance changes in the transactions DataFrame (master.all_data) based on the
+        latest initial account balances stored in initial_account_balances.
+
+        For each account in initial_account_balances:
+        - If the "Initial Date" is not equal to self.day_one, the function calculates the
+            propagated balance using calculateBalancesPerType and updates current_account_balances.
+        - Otherwise, sets the current balance for that account to 0.00.
+        Finally, the updated master.all_data DataFrame is displayed by calling updateTable.
+
+        Returns
+        -------
+        None
+            The master.all_data DataFrame is updated in-place and the UI refreshed.
+        """
+        if self.main_dashboard.all_data.empty:
             return
-    
-        for account, (date_str, balance) in self.initial_account_balances.items():
-            if date_str != self.day_one:
-                self.master.all_data, self.current_account_balances[account] = self.calculateBalancesPerType(self.master.all_data.copy(), account, date_str, balance)
+        
+        # Iterate over each row in the initial_account_balances DataFrame.
+        for _, row in self.main_dashboard.initial_account_balances.iterrows():
+            account     = row["Account"]
+            init_date   = row["Initial Date"]
+            init_value  = row["Initial Value"]
+            if init_date != self.main_dashboard.day_one:
+                # Calculate the propagated balance for this account and update current_account_balances.
+                self.main_dashboard.all_data, self.main_dashboard.current_account_balances[account] = self.calculateBalancesPerType(
+                                                                                self.main_dashboard.all_data.copy(), 
+                                                                                account, 
+                                                                                init_date, 
+                                                                                init_value)
+
             else:
-                self.current_account_balances[account] = 0.00
-    
-        # Update UI
-        self.updateTable(self.master.all_data)
+                self.main_dashboard.current_account_balances[account] = 0.00
         
     def calculateBalancesPerType(self, df: pd.DataFrame, account: str, given_date: str, given_balance: float) -> pd.DataFrame:
-        #TODO
         """
         Calculates balances for all transactions in an account based on its type, given a known balance on a specific date.
     
@@ -1725,9 +1833,9 @@ class DashboardActions:
     
         # Find the index of the transaction that has the given date
         reference_idx = account_df[account_df["Date"] == given_date].index.min()
-        
+
         # Get account type
-        account_type = self.account_cases[account]
+        account_type = self.main_dashboard.account_cases[account]
         
         if pd.isna(reference_idx):
     
@@ -2151,7 +2259,7 @@ class DashboardActions:
         category_window.bind("<Escape>", lambda event: closeWindow())
         category_window.focus_force()
 
-    def viewBudget(self):
+    def displayReports(self):
         #TODO
         """
 
@@ -3199,7 +3307,20 @@ class Dashboard(tk.Frame):
     
         Delegates the action to ui_actions.deleteTransaction().
         """
-        self.ui_actions.deleteTransaction()        
+        self.ui_actions.deleteTransaction()
+
+    def trainClassifier(self) -> None:
+        payee_classifier, category_classifier = Classifier.trainPayeeAndCategoryClassifier(self.all_data) 
+
+        predicted_payee, predicted_category = Classifier.predictTransactionLabels(
+                                                                description="Advance Auto Parts", 
+                                                                payment = 8423,
+                                                                deposit = 0, 
+                                                                account = "Capital One Credit", 
+                                                                payee_pipeline = payee_classifier, 
+                                                                category_pipeline = category_classifier
+                                                                )
+
         
 class TEMPHOLDING:
         
