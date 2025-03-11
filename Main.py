@@ -57,12 +57,14 @@ class FinanceTracker(tk.Tk):
         file_menu.add_command(label="Open", command=lambda: self.current_frame.openData(), accelerator="Ctrl+O")
         file_menu.add_command(label="Save", command=lambda: self.current_frame.saveData(), accelerator="Ctrl+S")
         file_menu.add_command(label="Save as", command=lambda: self.current_frame.saveDataAs(), accelerator="Ctrl+Shift+S")
-        file_menu.add_command(label="New", command=lambda event: self.current_frame.clearTable(), accelerator="Ctrl+N")
+        file_menu.add_command(label="New", command=lambda: self.current_frame.clearTable(), accelerator="Ctrl+N")
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.closeWindow, accelerator="Esc")
         menubar.add_cascade(label="File", menu=file_menu)
         
         accounts_menu = tk.Menu(menubar, tearoff=0)
+        accounts_menu.add_command(label="Add Banking Account", command=lambda: self.current_frame.addBankingAccount())
+        accounts_menu.add_command(label="Add Investment Account", command=lambda: self.current_frame.addInvestmentAccount())
         menubar.add_cascade(label="Accounts", menu=accounts_menu)
         
         reports_menu = tk.Menu(menubar, tearoff=0)

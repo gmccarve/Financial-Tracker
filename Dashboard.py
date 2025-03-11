@@ -87,7 +87,10 @@ class DataFrameProcessor:
         Returns:
         - pd.DataFrame: Updated DataFrame with the 'Date' column converted to datetime format.
         """
-        df['Date'] = pd.to_datetime(df['Date'], dayfirst=False, format='mixed').dt.date
+        try:
+            df['Date'] = pd.to_datetime(df['Date'], dayfirst=False, format='mixed').dt.date
+        except KeyError:
+            pass
         return df
     @staticmethod 
     def sortDataFrame(df: pd.DataFrame) -> pd.DataFrame:
@@ -143,37 +146,6 @@ class DataFrameProcessor:
         cat_list, _ = Utility.getCategoryTypes(df_type)
         df['Category'] = df['Category'].astype(str).apply(lambda x: f"*{x}" if x.strip() not in map(str.strip, map(str, cat_list)) else x)
         return df
-    @staticmethod 
-    def accountBalance(df: pd.DataFrame) -> pd.Series:
-        """
-        Calculate the current balance for each account.
-        - Uses the most recent 'Balance' value if available.
-        - Falls back to (Deposit - Payment) if Balance is missing or zero.
-    
-        Parameters:
-            df (pd.DataFrame): Transactions dataframe.
-    
-        Returns:
-            pd.Series: A series containing the latest balance for each account.
-        """
-        if "Account" not in df.columns or ("Balance" not in df.columns and "Payment" not in df.columns and "Deposit" not in df.columns):
-            return pd.Series(dtype=float)  # Return empty Series if required columns are missing
-    
-        # Get the most recent balance for each account (sort by Date if applicable)
-        if "Date" in df.columns:
-            #df = DataFrameProcessor.convertToDatetime(df)
-            df = df.sort_values(by="Date", ascending=True)
-    
-        latest_balances = df.groupby("Account")["Balance"].last()  # Last balance entry per account
-    
-        # Compute alternative balance where latest balance is zero
-        computed_balances = df.groupby("Account").agg({"Deposit": "sum", "Payment": "sum"})
-        computed_balances = abs(computed_balances["Deposit"]) - abs(computed_balances["Payment"])  # Convert to Series
-    
-        # Use the latest balance unless it's zero, then use computed balance
-        final_balances = latest_balances.mask(latest_balances == 0, computed_balances)
-    
-        return final_balances
 
 class DataManager:
     @staticmethod
@@ -249,21 +221,6 @@ class DataManager:
         Returns:
             pd.DataFrame: Formatted DataFrame ready for use.
         """            
-        
-        # Define keywords to differentiate account types
-        investment_keywords = ["TSP", "IRA", "401K", "Investment", "Stocks", "Bonds", "Mutual Funds", "TRS", "Retirement"]
-        banking_keywords = ["Checking", "Savings", "Credit", "Loan"]
-        
-        # Guess account type based on filename
-        account_type = "Banking"
-        for keyword in investment_keywords:
-            if keyword.lower() in account_name.lower():
-                account_type = "Investment"
-                break
-        for keyword in banking_keywords:
-            if keyword.lower() in account_name.lower():
-                account_type = "Banking"
-                break
 
         # Normalize column headers
         header_mapping = {
@@ -272,34 +229,22 @@ class DataManager:
             "Amount": "Payment",
             "Credit": "Deposit",
             "Debit": "Payment",
-            "Memo": "Note",
-            "Shares": "Shares",  # Investment-specific
-            "Ticker": "Ticker",  # Investment-specific
-            "Market Value": "MarketValue"  # Investment-specific
+            "Memo": "Note"
         }
         
         # Normalize column headers
         df.columns = [header_mapping.get(col, col) for col in df.columns]
         
-        # Check for investment-specific columns and override classification if found
-        if any(col in df.columns for col in ["Shares", "Ticker", "Market Value"]):
-            account_type = "Investment"
-        
         # Ensure required columns exist
 
-        if account_type == 'Banking':
+        if dashboard.table_to_display == 'Banking':
             expected_headers = list(dashboard.banking_column_widths)
-        else:
+        elif dashboard.table_to_display == 'Investments':
             expected_headers = list(dashboard.investment_column_widths)
-            
+
         for col in expected_headers:
             if col not in df.columns:
                 df[col] = ""  # Add missing columns
-                
-        # Ensure all expected headers exist
-        for col in expected_headers:
-            if col not in df.columns:
-                df[col] = ""  # Fill missing columns with empty values
         
         # Convert data types as necessary
         df = DataFrameProcessor.convertToDatetime(df)
@@ -309,42 +254,45 @@ class DataManager:
         # Convert numeric fields if applicable
         df = DataFrameProcessor.convertCurrency(df)
         
-        # Assign account name and type
-        df['Account'] = account_name
-        df['Account Type'] = account_type
-        df['Category'] = ''
+        if dashboard.table_to_display == 'Banking':
+            # Assign account name and type
+            df['Account'] = account_name
+            df['Category'] = ''
+            
+            # Categorize the account based on Payment, Deposit, and Balance values
+            if (
+                (df["Payment"] <= 0.00).all() and
+                (df["Deposit"] >= 0.00).all() and
+                (df["Balance"] == 0.00).all()
+            ):
+                case = "Type 1"
+            elif (
+                (df["Payment"] >= 0.00).all() and
+                (df["Deposit"] <= 0.00).all() and
+                (df["Balance"] == 0.00).all()
+            ):
+                case = "Type 2"
+            elif (
+                (df["Payment"] >= 0.00).all() and
+                (df["Deposit"] >= 0.00).all() and
+                (df["Balance"] == 0.00).all()
+            ):
+                case = "Type 3"
+            elif (
+                (df["Payment"] >= -999999.00).all() and 
+                (df["Deposit"] == 0.00).all()
+            ):
+                case = "Type 4"
+            else:
+                case = "Type 0"
         
-        # Categorize the account based on Payment, Deposit, and Balance values
-        if (
-            (df["Payment"] <= 0.00).all() and
-            (df["Deposit"] >= 0.00).all() and
-            (df["Balance"] == 0.00).all()
-        ):
-            case = "Type 1"
-        elif (
-            (df["Payment"] >= 0.00).all() and
-            (df["Deposit"] <= 0.00).all() and
-            (df["Balance"] == 0.00).all()
-        ):
-            case = "Type 2"
-        elif (
-            (df["Payment"] >= 0.00).all() and
-            (df["Deposit"] >= 0.00).all() and
-            (df["Balance"] == 0.00).all()
-        ):
-            case = "Type 3"
-        elif (
-            (df["Payment"] >= -999999.00).all() and 
-            (df["Deposit"] == 0.00).all()
-        ):
-            case = "Type 4"
-        else:
-            case = "Type 0"
+            # Select only the relevant columns in the correct order
+            df = df[expected_headers]
     
-        # Select only the relevant columns in the correct order
-        df = df[expected_headers]
-  
-        return df, case    
+            return df, case    
+        
+        else:
+            return df, -1
     @staticmethod     
     def updateData() -> None:
         """
@@ -405,7 +353,7 @@ class DataManager:
         
         return merged_df 
     @staticmethod
-    def exportData(transaction_data:pd.DataFrame, initial_balances:dict, new_file: str) -> str:
+    def exportData(banking_data:pd.DataFrame, investment_data:pd.DataFrame, initial_balances:dict, new_file: str) -> str:
         """Exports all data to Excel."""
         if new_file == '':
             file_path = filedialog.asksaveasfilename(defaultextension=".xlsx",
@@ -415,17 +363,20 @@ class DataManager:
         else:
             file_path = new_file
             
-        transaction_data = DataFrameProcessor.convertToDatetime(transaction_data)
-
-        initial_balances = pd.DataFrame.from_dict(initial_balances, orient="index", columns=["Initial Date", "Initial Value"]).reset_index().rename(columns={"index": "Account"})
+        banking_data = DataFrameProcessor.convertToDatetime(banking_data)
+        try:
+            investment_data = DataFrameProcessor.convertToDatetime(investment_data)
+        except:
+            pass
+        
         with pd.ExcelWriter(file_path) as writer:
-            transaction_data.to_excel(writer, sheet_name="Transactions", index=False)
+            banking_data.to_excel(writer, sheet_name="Banking Transactions", index=False)
             initial_balances.to_excel(writer, sheet_name="Initial Balances", index=False)
-            #df3.to_excel(writer, sheet_name="Sheet3", index=False)
+            investment_data.to_excel(writer, sheet_name="Investments", index=False)
     
         messagebox.showinfo("Export Complete", f"Data saved to {file_path}")  
     @staticmethod
-    def saveData(transaction_data:pd.DataFrame, initial_balances:dict, account_types: dict, new_file: str) -> None:
+    def saveData(banking_data:pd.DataFrame, investment_data:pd.DataFrame, initial_balances:dict, account_types: dict, new_file: str) -> None:
         """Exports all data to pickel save file"""
         if new_file == '':
             file_path = filedialog.asksaveasfilename(defaultextension=".pkl",
@@ -435,12 +386,19 @@ class DataManager:
         else:
             file_path = new_file
 
-        transaction_data = DataFrameProcessor.convertToDatetime(transaction_data)
-
+        banking_data = DataFrameProcessor.convertToDatetime(banking_data)
+        try:
+            investment_data = DataFrameProcessor.convertToDatetime(investment_data)
+        except:
+            pass
+        
         with open(file_path, "wb") as f:
-            pickle.dump({"Transaction Data": transaction_data, 
+            pickle.dump(
+                        {"Banking Data": banking_data, 
                          "Initial Balances": initial_balances, 
-                         "Account Types": {key.replace('.csv', ''): value for key, value in account_types.items()}}, 
+                         "Account Types": {key.replace('.csv', ''): value for key, value in account_types.items()}, 
+                         "Investment Data": investment_data
+                         }, 
                          f)
         
         messagebox.showinfo("Save Complete", f"Data saved to {file_path}")  
@@ -448,7 +406,9 @@ class DataManager:
         return file_path
     @staticmethod
     def loadSaveFile(save_file: str):
-        """TEST"""
+        """
+        
+        """
         
         if save_file == '':
             return pd.DataFrame, {}
@@ -457,11 +417,18 @@ class DataManager:
             with open(save_file, "rb") as f:
                 data = pickle.load(f)
 
-            all_data_df = data.get('Transaction Data', pd.DataFrame())
+            all_banking_data_df = data.get('Banking Data', pd.DataFrame())
+            all_investment_data_df = data.get('Investment Data', pd.DataFrame())
             init_bal_dict = data.get("Initial Balances", {})
             acc_type_dict = data.get("Account Types", {})
+
+            all_banking_data_df = all_banking_data_df.fillna(value='')
+            all_investment_data_df = all_investment_data_df.fillna(value='')
+
+            all_banking_data_df = DataFrameProcessor.getDataFrameIndex(all_banking_data_df)
+            all_investment_data_df = DataFrameProcessor.getDataFrameIndex(all_investment_data_df)
     
-            return all_data_df, init_bal_dict, acc_type_dict
+            return all_banking_data_df, all_investment_data_df, init_bal_dict, acc_type_dict
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load file: {e}")
             return pd.DataFrame(), {}, {}
@@ -469,54 +436,29 @@ class DataManager:
 class TransactionManager:            
     @staticmethod     
     def openTransactionWindow(dashboard_actions: "Dashboard", dashboard: "Dashboard", edit=False) -> None:
-        #TODO Move to appropriate place/class
         """Opens a transaction window for adding/editing a transaction, pre-filling if data is provided."""
     
         def validateInputs():
-            """Checks if inputs match expected types before submission."""
             errors = []
-            input_values = {header: entry.get().strip() for header, entry in entry_fields.items()}
-    
-            if all(value == "" for value in input_values.values()):
-                messagebox.showwarning("Warning", "Cannot save an empty transaction.")
-                return False
-    
-            for header, entry in entry_fields.items():
-                value = entry.get().strip()
-    
-                if header in ["Payment", "Deposit", "Balance"]:
-                    value = value if value else "0.00"
+            for header, widget in entry_fields.items():
+                value = widget.get().strip()
+
+                if header in ["Payment", "Deposit", "Balance", "Units", "Price"]:
                     try:
-                        float_value = float(value.replace("$", "").replace(",", ""))
-                        entry_fields[header].delete(0, tk.END)
-                        entry_fields[header].insert(0, f"{float_value:.2f}")
-                        entry.config(bg="white")
+                        float(value.replace("$", "").replace(",", ""))
+                        widget.config(bg="white")
                     except ValueError:
                         errors.append(f"'{header}' must be a valid number.")
-                        entry.config(bg="lightcoral")
-    
-                elif header == "Date":
-                    if not value.strip():
-                        value = dashboard.day_one
-                    
-                    valid_date = False
-                    date_formats = ["%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y", "%d %b %Y", "%b %d, %Y"]
+                        widget.config(bg="lightcoral")
 
-                    for fmt in date_formats:
-                        try:
-                            parsed_date = datetime.strptime(value, fmt).date()
-                            entry_fields[header].delete(0, tk.END)
-                            entry_fields[header].insert(0, parsed_date.strftime("%Y-%m-%d"))  # Convert to standard format
-                            entry.config(bg="white")
-                            valid_date = True
-                            break
-                        except ValueError:
-                            continue  # Try next format
-                    
-                    if not valid_date:
-                        errors.append(f"'{header}' must be a valid date (YYYY-MM-DD, MM/DD/YYYY, DD-MM-YYYY, etc.).")
-                        entry.config(bg="lightcoral")
-    
+                elif header == "Date":
+                    try:
+                        datetime.strptime(value, "%Y-%m-%d")
+                        widget.config(bg="white")
+                    except ValueError:
+                        errors.append(f"Invalid date format for '{header}'. Use YYYY-MM-DD.")
+                        widget.config(bg="lightcoral")
+
             if errors:
                 messagebox.showerror("Input Error", "\n".join(errors))
                 return False
@@ -524,58 +466,107 @@ class TransactionManager:
     
         def submitTransaction(event=None):
             """Parses, validates, and processes the transaction."""
-            stored_values = {header: entry.get().strip() for header, entry in entry_fields.items()}
-        
+
             if not validateInputs():
                 transaction_window.destroy()
                 return stored_values
-        
-            # Has to be included twice to overcome overrides. IDK. It works.
+            
             stored_values = {header: entry.get().strip() for header, entry in entry_fields.items()}
-        
-            # Convert stored values to DataFrame
-            new_df = pd.DataFrame([stored_values])
-            new_df, acc_type = DataManager.parseNewDF(dashboard, new_df, stored_values.get("Account", "Unknown"))
-        
+            new_df, acc_type = DataManager.parseNewDF(dashboard, pd.DataFrame([stored_values]), stored_values["Account"])
+
             # Ensure proper data type conversion
-            for col in ["No.", "Payment", "Deposit", "Balance"]:
+            for col in ["No.", "Payment", "Deposit", "Balance", "Units"]:
                 if col in new_df.columns:
                     new_df[col] = pd.to_numeric(new_df[col], errors='coerce').fillna(0).astype(int)  # Convert to int
+
+            # Determine which dataframe to use based on table type
+            if dashboard.table_to_display == 'Banking':
+                df_to_update = dashboard.all_banking_data
+            elif dashboard.table_to_display == 'Investments':
+                df_to_update = dashboard.all_investment_data
+
 
             if prefill_data:
                 # Editing an existing transaction
                 selected_items = dashboard_actions.widget_dashboard.tree.selection()
                 selected_number = int(dashboard_actions.widget_dashboard.tree.item(selected_items[0], "values")[0])  # Convert to int for index matching
-        
-                # Find the index of the selected transaction in all_data
-                index_to_update = dashboard.all_data[dashboard.all_data["No."] == selected_number].index
-        
-                if not index_to_update.empty:
-                    # Ensure new_df has the same columns as all_data before assignment
-                    new_df = new_df[dashboard.all_data.columns]
-        
-                    # Assign values row-wise
-                    for col in dashboard.all_data.columns:
-                        dashboard.all_data.loc[index_to_update, col] = new_df.iloc[0][col]
-        
-                else:
-                    messagebox.showerror("Error", "Transaction not found for editing.")
+
+                # Find the exact row index matching the 'No.' column
+                index_to_update = df_to_update.index[df_to_update["No."] == selected_number].tolist()
+
+                if not index_to_update:
+                    messagebox.showerror("Error", "Transaction number not found.")
+                    transaction_window.destroy()
                     return
+
+                index_to_update = index_to_update[0]  # This gives the correct index as an integer
+
+                # Assign the 'No.' explicitly
+                new_df.at[0, 'No.'] = selected_number
+
+                # Update row values directly
+                for col in new_df.columns:
+                    if col in df_to_update.columns:
+                        # Preserve existing Category if new value is empty
+                        if col == "Category" and not new_df.at[0, col].strip():
+                            continue
+                        # Explicitly handle Date to ensure type compatibility
+                        elif col == "Date":
+                            df_to_update.at[index_to_update, col] = pd.to_datetime(new_df.at[0, col])
+                        else:
+                            df_to_update.at[index_to_update, col] = new_df.at[0, col]
+
+
             else:
                 # Adding new transaction
-                if dashboard.all_data.empty:
-                    dashboard.all_data = new_df
-                else:
-                    dashboard.all_data = pd.concat([dashboard.all_data, new_df], ignore_index=True)
-        
-            dashboard.all_data = DataFrameProcessor.getDataFrameIndex(dashboard.all_data)
-            dashboard_actions.updateTable(dashboard.all_data)
-        
+                if dashboard.table_to_display == 'Banking':
+                    dashboard.all_banking_data = pd.concat([dashboard.all_banking_data, new_df], ignore_index=True)
+                elif dashboard.table_to_display == 'Investments':
+                    dashboard.all_investment_data = pd.concat([dashboard.all_investment_data, new_df], ignore_index=True)
+
+            # Re-index and refresh the table view after modification
+            if dashboard.table_to_display == 'Banking':
+                dashboard.all_banking_data = DataFrameProcessor.getDataFrameIndex(dashboard.all_banking_data)
+                dashboard_actions.updateTable(dashboard.all_banking_data)
+            elif dashboard.table_to_display == 'Investments':
+                dashboard.all_investment_data = DataFrameProcessor.getDataFrameIndex(dashboard.all_investment_data)
+                dashboard_actions.updateTable(dashboard.all_investment_data)
+
             transaction_window.destroy()
     
         def closeWindow(event=None):
             """Closes the transaction window."""
             transaction_window.destroy()
+
+        def pickDate(entry):
+            # Create a Toplevel window with a calendar
+            cal_win = tk.Toplevel(transaction_window)
+            cal_win.title("Select Date")
+            cal_win.geometry("250x250")
+
+            cal = Calendar(
+                cal_win,
+                selectmode="day",
+                year=initial_date.year,
+                month=initial_date.month,
+                day=initial_date.day,
+                date_pattern='yyyy-mm-dd'
+            )
+            cal.pack(padx=10, pady=10)
+
+            def selectDate():
+                entry.delete(0, tk.END)
+                entry.insert(0, cal.get_date())
+                cal_win.destroy()
+
+            # Buttons for confirming or canceling date selection
+            tk.Button(cal_win, text="OK", command=selectDate).pack(pady=5, padx=5)
+            tk.Button(cal_win, text="Cancel", command=cal_win.destroy).pack(pady=5, padx=5)
+
+            # Key bindings for date selection
+            cal_win.bind("<Return>", pickDate)
+            cal_win.bind("<Escape>", cal_win.destroy)
+            cal_win.focus_force()  # Bring this Toplevel to the front
     
         # Create transaction window
         transaction_window = tk.Toplevel(dashboard)
@@ -585,11 +576,6 @@ class TransactionManager:
         transaction_window.bind("<Return>", submitTransaction)
     
         entry_fields = {}
-
-        if dashboard.table_to_display == 'Banking':
-            headers = list(dashboard.banking_column_widths.keys())[1:]
-        elif dashboard.table_to_display == 'Investment':
-            headers = list(dashboard.investment_column_widths.keys())[1:]
             
         if edit:
            selected_items = dashboard_actions.widget_dashboard.tree.selection()
@@ -605,6 +591,11 @@ class TransactionManager:
            headers = headers[1:]
            
         else:
+            if dashboard.table_to_display == 'Banking':
+                headers = list(dashboard.banking_column_widths.keys())[1:]
+            elif dashboard.table_to_display == 'Investments':
+                headers = list(dashboard.investment_column_widths.keys())[1:]
+        
             prefill_data = None
     
         # Configure the second column to expand with window resizing
@@ -612,14 +603,97 @@ class TransactionManager:
     
         for idx, column in enumerate(headers):
             tk.Label(transaction_window, text=column, anchor="w").grid(row=idx, column=0, padx=10, pady=5, sticky="w")
-    
-            entry = tk.Entry(transaction_window)
-            entry.grid(row=idx, column=1, padx=10, pady=5, sticky="ew")
-    
+
+            frame = ttk.Frame(transaction_window)
+            frame.grid(row=idx, column=1, padx=10, pady=5, sticky="ew")
+
             if prefill_data and column in prefill_data:
-                entry.insert(0, prefill_data[column])
+                current_value = prefill_data[column]
+            else:
+                current_value = ''
+                #entry.insert(0, prefill_data[column])
+
+            if column == "Date":
+                try:
+                    initial_date = datetime.strptime(current_value, "%Y-%m-%d").date()
+                except ValueError:
+                    # If current_value is not a valid date, default to today
+                    initial_date = date.today()
+
+                entry = tk.Entry(frame)
+                entry.pack(side=tk.LEFT, fill='x', expand=True)
+                entry_fields[column] = entry
+                entry_fields[column].insert(0, initial_date)
+
+                calendar_button = tk.Button(frame, text="📅", command=lambda e=entry_fields[column]: pickDate(e))
+                calendar_button.pack(side=tk.RIGHT)
+            # =======================================
+            #  Text / Numeric Editing Columns
+            # =======================================
+            if column in ["Payment", "Deposit", "Balance", "Note", "Symbol"]:
+                """
+                x, y, width, height = self.widget_dashboard.tree.bbox(item, column)
+                
+                # Create an Entry widget over the cell
+                entry_widget = tk.Entry(self.widget_dashboard.tree)
+                entry_widget.place(x=x, y=y, width=width, height=height)
+                
+                # Populate the Entry with current cell value
+                entry_widget.insert(0, current_value)
+                entry_widget.select_range(0, tk.END)
+                entry_widget.focus_set()
+        
+                # Bind keys to handle user acceptance or cancellation
+                entry_widget.bind("<Return>", lambda e: saveEdit(entry_widget.get()))
+                entry_widget.bind("<Tab>", lambda e: saveEdit(entry_widget.get()))
+                entry_widget.bind("<FocusOut>", cancelEdit)
+                """
+                column
+        
+            # =======================================
+            #  Dropdown Columns
+            # =======================================
+            elif column in ["Category", "Account", "Payee", "Action", "Asset"]:
+                """
+                x, y, width, height = self.widget_dashboard.tree.bbox(item, column)
+                
+                # Create a readonly Combobox over the cell
+                dropdown = ttk.Combobox(self.widget_dashboard.tree, state="readonly")
+                dropdown.place(x=x, y=y, width=width, height=height)
+        
+                # Provide the dropdown values
+                if col_name == "Category":
+                    dropdown["values"] = self.main_dashboard.categories
+                elif col_name == "Payee":
+                    dropdown["values"] = self.main_dashboard.payees
+                elif col_name == "Account":
+                    accounts = self.getBankingAccounts()
+                    dropdown["values"] = accounts
+                elif col_name == "Asset":
+                    dropdown["values"] = self.main_dashboard.assets
+                elif col_name == 'Action':
+                    dropdown["values"] = self.main_dashboard.actions
+        
+                dropdown.set(current_value)
+                
+                # When user picks an item from the dropdown, call saveEdit
+                dropdown.bind("<<ComboboxSelected>>", lambda e: saveEdit(dropdown.get()))
+                dropdown.focus_set()
+                
+                # If user moves focus away, cancel editing
+                dropdown.bind("<FocusOut>", cancelEdit)
+                """
+                column
+
+
     
-            entry_fields[column] = entry
+            #entry = tk.Entry(transaction_window)
+            #entry.grid(row=idx, column=1, padx=10, pady=5, sticky="ew")
+    
+            #if prefill_data and column in prefill_data:
+            #    entry.insert(0, prefill_data[column])
+    
+            #entry_fields[column] = entry
             
         window_width, window_height = 300, (30*(idx+1))+60
         Windows.openRelativeWindow(transaction_window, main_width=dashboard.winfo_x(), main_height=dashboard.winfo_y(), width=window_width, height=window_height)
@@ -635,27 +709,55 @@ class TransactionManager:
         submit_button.focus_set()
     @staticmethod 
     def deleteTransaction(dashboard_actions: "Dashboard", dashboard: "Dashboard") -> None:
-        """Deletes the selected transaction(s) from the data table."""
         selected_items = dashboard_actions.widget_dashboard.tree.selection()
+
         if not selected_items:
             messagebox.showwarning("Warning", "No transactions selected!")
             return
-    
-        selected_numbers = [dashboard_actions.widget_dashboard.tree.item(item, "values")[0] for item in selected_items]
-        selected_numbers = set(map(int, selected_numbers))
-    
-        indices_to_drop = dashboard.all_data[dashboard.all_data["No."].isin(selected_numbers)].index
-    
-        confirm = messagebox.askyesno("Confirm Delete", 
-                                      f"Are you sure you want to delete {len(indices_to_drop)} transaction(s)?", 
-                                      parent=dashboard)
-        if confirm is None or not confirm:  # Explicitly check for None
-            return  # User canceled or closed the dialog, so exit
-    
-        dashboard.all_data = dashboard.all_data.drop(indices_to_drop).reset_index(drop=True)
-        dashboard.all_data = DataFrameProcessor.getDataFrameIndex(dashboard.all_data)
-    
-        dashboard_actions.updateTable(dashboard.all_data)
+
+        selected_numbers = {int(dashboard_actions.widget_dashboard.tree.item(item, "values")[0]) for item in selected_items}
+
+        if dashboard.table_to_display == 'Banking':
+            df_to_update = dashboard.all_banking_data
+        elif dashboard.table_to_display == 'Investments':
+            df_to_update = dashboard.all_investment_data
+        else:
+            messagebox.showerror("Error", f"Unknown table type: {dashboard.table_to_display}")
+            return
+
+        if dashboard.table_to_display == 'Banking':
+            indices_to_drop = dashboard.all_banking_data[dashboard.all_banking_data["No."].isin(selected_numbers)].index
+        elif dashboard.table_to_display == 'Investments': 
+            indices_to_drop = dashboard.all_investment_data[dashboard.all_investment_data["No."].isin(selected_numbers)].index
+
+        confirm = messagebox.askyesno("Confirm Delete",
+                                    f"Are you sure you want to delete {len(indices_to_drop)} transaction(s)?",
+                                    parent=dashboard)
+        if not confirm:
+            return  # User canceled
+
+        if dashboard.table_to_display == 'Banking':
+            # Perform deletion in-place
+            dashboard.all_banking_data.drop(indices_to_drop, inplace=True)
+            dashboard.all_banking_data.reset_index(drop=True, inplace=True)
+
+            # Reindex the DataFrame
+            dashboard.all_banking_data = DataFrameProcessor.getDataFrameIndex(dashboard.all_banking_data)
+            
+            # Update the displayed table immediately
+            dashboard_actions.updateTable(dashboard.all_banking_data)
+
+        elif dashboard.table_to_display == 'Investments': 
+            # Perform deletion in-place
+            dashboard.all_investment_data.drop(indices_to_drop, inplace=True)
+            dashboard.all_investment_data.reset_index(drop=True, inplace=True)
+
+            # Reindex the DataFrame
+            dashboard.all_investment_data = DataFrameProcessor.getDataFrameIndex(dashboard.all_investment_data)
+            
+            # Update the displayed table immediately
+            dashboard_actions.updateTable(dashboard.all_investment_data)
+
   
 class DashboardUI(tk.Frame):
     def __init__(self, parent_dashboard, master=None, *args, **kwargs):
@@ -716,156 +818,48 @@ class DashboardUI(tk.Frame):
     # SIDEBAR
     ########################################################
     def createSidebar(self):
-        """Creates the sidebar with accounts, reports, and actions."""
-        
-        # Accounts Listbox
-        self.banking_label = tk.Label(
-            self.sidebar, 
-            text="Banking Accounts",   
-            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
-            bg=StyleConfig.BG_COLOR, 
-            fg=StyleConfig.TEXT_COLOR
+        """Creates the sidebar with accounts, categories, payees, and reports."""
+        self.sidebar_labels = []
+        self.sidebar_listboxes = []
+        self.sidebar_frames = []
+
+        sidebar_items = ["Accounts", "Categories", "Payees", "Reports"]
+
+        for idx, item in enumerate(sidebar_items):
+            # Create label
+            label = tk.Label(
+                self.sidebar,
+                text=item,
+                font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
+                bg=StyleConfig.BG_COLOR,
+                fg=StyleConfig.TEXT_COLOR
             )
-        self.banking_label.pack(anchor='center', pady=5)
-    
-        # Add a frame to contain the listbox and scrollbar
-        self.accounts_listbox_frame = ttk.Frame(self.sidebar)
-        self.accounts_listbox_frame.pack(fill="x", padx=5, pady=2)
-        
-        # Create listbox with a scrollbar
-        self.accounts_list = tk.Listbox(self.accounts_listbox_frame, height=6, width=35)
-        self.accounts_list.pack(side=tk.LEFT, fill='x', expand=True)
-    
-        # Add scrollbar for smooth scrolling
-        self.accounts_scrollbar = ttk.Scrollbar(self.accounts_listbox_frame, orient=tk.VERTICAL, command=self.accounts_list.yview)
-        self.accounts_scrollbar.pack(side=tk.RIGHT, fill='y')
-        self.accounts_list.config(yscrollcommand=self.accounts_scrollbar.set)
-    
-        # Bind smooth scrolling behavior
-        self.accounts_list.bind("<MouseWheel>",  self.actions_manager.smoothScroll)
-        
-        # Bind double-click event to filter transactions
-        self.accounts_list.bind("<Double-Button-1>",  self.actions_manager.filterTransactionsByBankingAccount)
-        
-        
-        # Categories Listbox
-        self.category_label = tk.Label(
-            self.sidebar, 
-            text="Categories",
-            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
-            bg=StyleConfig.BG_COLOR, 
-            fg=StyleConfig.TEXT_COLOR
-            )
-        self.category_label.pack(anchor='center', pady=5)
-    
-        # Add a frame to contain the listbox and scrollbar
-        self.category_listbox_frame = ttk.Frame(self.sidebar)
-        self.category_listbox_frame.pack(fill="x", padx=5, pady=2)
-        
-        # Create listbox with a scrollbar
-        self.category_list = tk.Listbox(self.category_listbox_frame, height=6, width=35)
-        self.category_list.pack(side=tk.LEFT, fill='x', expand=True)
-    
-        # Add scrollbar for smooth scrolling
-        self.category_scrollbar = ttk.Scrollbar(self.category_listbox_frame, orient=tk.VERTICAL, command=self.category_list.yview)
-        self.category_scrollbar.pack(side=tk.RIGHT, fill='y')
-        self.category_list.config(yscrollcommand=self.category_scrollbar.set)
-    
-        # Bind smooth scrolling behavior
-        self.category_list.bind("<MouseWheel>",  self.actions_manager.smoothScroll)
-        
-        # Bind double-click event to filter transactions
-        self.category_list.bind("<Double-Button-1>",  self.actions_manager.filterTransactionsByCategory)
-        
-        
-        # Payees Listbox
-        self.payee_label = tk.Label(
-            self.sidebar, 
-            text="Payees",
-            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
-            bg=StyleConfig.BG_COLOR, 
-            fg=StyleConfig.TEXT_COLOR
-            )
-        self.payee_label.pack(anchor='center', pady=5)
-    
-        # Add a frame to contain the listbox and scrollbar
-        self.payee_listbox_frame = ttk.Frame(self.sidebar)
-        self.payee_listbox_frame.pack(fill="x", padx=5, pady=2)
-        
-        # Create listbox with a scrollbar
-        self.payee_list = tk.Listbox(self.payee_listbox_frame, height=6, width=35)
-        self.payee_list.pack(side=tk.LEFT, fill='x', expand=True)
-    
-        # Add scrollbar for smooth scrolling
-        self.payee_scrollbar = ttk.Scrollbar(self.payee_listbox_frame, orient=tk.VERTICAL, command=self.payee_list.yview)
-        self.payee_scrollbar.pack(side=tk.RIGHT, fill='y')
-        self.payee_list.config(yscrollcommand=self.payee_scrollbar.set)
-    
-        # Bind smooth scrolling behavior
-        self.payee_list.bind("<MouseWheel>",  self.actions_manager.smoothScroll)
-        
-        # Bind double-click event to filter transactions
-        self.payee_list.bind("<Double-Button-1>",  self.actions_manager.filterTransactionsByPayee)
-        
-        
-        # Investments Listbox
-        self.investment_label = tk.Label(
-            self.sidebar, 
-            text="Investment Accounts",
-            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
-            bg=StyleConfig.BG_COLOR, 
-            fg=StyleConfig.TEXT_COLOR
-            )
-        self.investment_label.pack(anchor='center', pady=5)
-    
-        # Add a frame to contain the listbox and scrollbar
-        self.investment_listbox_frame = ttk.Frame(self.sidebar)
-        self.investment_listbox_frame.pack(fill="x", padx=5, pady=2)
-        
-        # Create listbox with a scrollbar
-        self.investments_list = tk.Listbox(self.investment_listbox_frame, height=6, width=35)
-        self.investments_list.pack(side=tk.LEFT, fill='x', expand=True)
-    
-        # Add scrollbar for smooth scrolling
-        self.investments_scrollbar = ttk.Scrollbar(self.investment_listbox_frame, orient=tk.VERTICAL, command=self.investments_list.yview)
-        self.investments_scrollbar.pack(side=tk.RIGHT, fill='y')
-        self.investments_list.config(yscrollcommand=self.investments_scrollbar.set)
-    
-        # Bind smooth scrolling behavior
-        self.investments_list.bind("<MouseWheel>",  self.actions_manager.smoothScroll)
-        
-        # Bind double-click event to filter transactions
-        self.investments_list.bind("<Double-Button-1>",  self.actions_manager.filterTransactionsByInvestmentAccount)
-            
-        
-        # Reports Listbox
-        self.reports_label = tk.Label(
-            self.sidebar, 
-            text="Reports",
-            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
-            bg=StyleConfig.BG_COLOR, 
-            fg=StyleConfig.TEXT_COLOR
-            )
-        self.reports_label.pack(anchor='center', pady=5)
-    
-        # Add a frame to contain the listbox and scrollbar
-        self.reports_listbox_frame = ttk.Frame(self.sidebar)
-        self.reports_listbox_frame.pack(fill="x", padx=5, pady=2)
-        
-        # Create listbox with a scrollbar
-        self.reports_list = tk.Listbox(self.reports_listbox_frame, height=6, width=35)
-        self.reports_list.pack(side=tk.LEFT, fill='x', expand=True)
-    
-        # Add scrollbar for smooth scrolling
-        self.reports_scrollbar = ttk.Scrollbar(self.reports_listbox_frame, orient=tk.VERTICAL, command=self.reports_list.yview)
-        self.reports_scrollbar.pack(side=tk.RIGHT, fill='y')
-        self.reports_list.config(yscrollcommand=self.reports_scrollbar.set)
-    
-        # Bind smooth scrolling behavior
-        self.reports_list.bind("<MouseWheel>",  self.actions_manager.smoothScroll)
-        
-        # Bind double-click event to filter transactions
-        self.reports_list.bind("<Double-Button-1>",  self.actions_manager.displayReports)
+            label.grid(row=2*idx, column=0, sticky="ew", padx=5, pady=(10, 0))
+
+            # Create frame for listbox and scrollbar
+            listbox_frame = ttk.Frame(self.sidebar)
+            listbox_frame.grid(row=2*idx+1, column=0, sticky="ew", padx=5, pady=(0, 10))
+
+            # Create listbox
+            listbox = tk.Listbox(listbox_frame, height=6, width=35)
+            listbox.pack(side=tk.LEFT, fill='x', expand=True)
+
+            # Add scrollbar
+            scrollbar = ttk.Scrollbar(listbox_frame, orient=tk.VERTICAL, command=listbox.yview)
+            scrollbar.pack(side=tk.RIGHT, fill='y')
+            listbox.config(yscrollcommand=scrollbar.set)
+
+            # Bind events
+            listbox.bind("<MouseWheel>", self.actions_manager.smoothScroll)
+            listbox.bind("<Double-Button-1>", lambda event, idx=idx: self.actions_manager.filterEntries(case=idx+1))
+
+            # Keep references
+            self.sidebar_labels.append(label)
+            self.sidebar_listboxes.append(listbox)
+            self.sidebar_frames.append(listbox_frame)
+
+        # Configure sidebar grid to expand
+        self.sidebar.grid_columnconfigure(0, weight=1)
         
         """
         ttk.Label(self.sidebar, text="Actions", font=(StyleConfig.FONT_FAMILY, StyleConfig.SUB_FONT_SIZE, "bold")).pack(anchor='w', pady=5)
@@ -888,19 +882,20 @@ class DashboardUI(tk.Frame):
         self.separators = []
         self.images = {}
         
-        self.button_separators = [3, 6, 8, 9]
+        self.button_separators = [3, 7, 9, 10]
         
         self.buttons = []
         button_data = [
-            ("Add",         "add.png",      self.actions_manager.addTransaction),
+            ("Add",         "add.png",      self.actions_manager.addEntry),
             ("Edit",        "edit.png",     self.actions_manager.editTransaction),
             ("Delete",      "delete.png",   self.actions_manager.deleteTransaction),
             ("Open",        "open.png",     self.actions_manager.openData),
             ("Balances",    "accounts.png", self.actions_manager.trackBankBalances),
             ("Payee",       "payee.png",    self.actions_manager.viewPayees),
             ("Category",    "category.png", self.actions_manager.viewCategories),
-            ("Banking",     "banking.png",  lambda: self.actions_manager.filterByAccountType("Banking")),
-            ("Stocks",      "stonks.png",   lambda: self.actions_manager.filterByAccountType("Investments")),
+            ("Actions",      "actions.png", self.actions_manager.viewInvestmentActions),
+            ("Banking",     "banking.png",  lambda: self.actions_manager.switchAccountView("Banking")),
+            ("Stocks",      "stonks.png",   lambda: self.actions_manager.switchAccountView("Investments")),
             ("Reports",     "budget.png",   self.actions_manager.displayReports),
             ("Export",      "export.png",   self.actions_manager.exportData),
             ("Options",     "options.png",  self.actions_manager.viewOptions),
@@ -1060,38 +1055,17 @@ class DashboardUI(tk.Frame):
                        font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
     
         # Update Sidebar Labels
-        self.banking_label.config(bg=StyleConfig.BG_COLOR, 
-                                  fg=StyleConfig.TEXT_COLOR, 
-                                  font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"))
-        self.investment_label.config(bg=StyleConfig.BG_COLOR, 
-                                     fg=StyleConfig.TEXT_COLOR, 
-                                     font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"))
-        self.category_label.config(bg=StyleConfig.BG_COLOR, 
-                                   fg=StyleConfig.TEXT_COLOR, 
-                                   font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"))
-        self.payee_label.config(bg=StyleConfig.BG_COLOR, 
-                                   fg=StyleConfig.TEXT_COLOR, 
-                                   font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"))
-        self.reports_label.config(bg=StyleConfig.BG_COLOR, 
-                                   fg=StyleConfig.TEXT_COLOR, 
-                                   font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"))
+        for label in self.sidebar_labels:
+            label.config(bg=StyleConfig.BG_COLOR, 
+                                    fg=StyleConfig.TEXT_COLOR, 
+                                    font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"))
     
         # Update Sidebar Account Lists
-        self.accounts_list.config(bg=StyleConfig.BG_COLOR, 
-                                  fg=StyleConfig.TEXT_COLOR, 
-                                  font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
-        self.investments_list.config(bg=StyleConfig.BG_COLOR, 
-                                     fg=StyleConfig.TEXT_COLOR, 
-                                     font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
-        self.category_list.config(bg=StyleConfig.BG_COLOR, 
-                                  fg=StyleConfig.TEXT_COLOR, 
-                                  font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
-        self.payee_list.config(bg=StyleConfig.BG_COLOR, 
-                                  fg=StyleConfig.TEXT_COLOR, 
-                                  font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
-        self.reports_list.config(bg=StyleConfig.BG_COLOR, 
-                                  fg=StyleConfig.TEXT_COLOR, 
-                                  font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
+        for listbox in self.sidebar_listboxes:
+            listbox.config(bg=StyleConfig.BG_COLOR, 
+                                    fg=StyleConfig.TEXT_COLOR, 
+                                    font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
+        
     
         # Update Search Label in Toolbar
         self.search_label.config(bg=StyleConfig.BG_COLOR, 
@@ -1104,7 +1078,7 @@ class DashboardUI(tk.Frame):
     
         # Ensure the colors update immediately
         self.update_idletasks()
-    
+
 class DashboardActions:
     """
     Handles user-driven actions from the Dashboard. 
@@ -1126,7 +1100,7 @@ class DashboardActions:
         self.main_dashboard = main_dashboard
         self.widget_dashboard = widget_dashboard
 
-    def addTransaction(self) -> None:
+    def addEntry(self) -> None:
         """
         Opens a transaction window in 'add' mode.
 
@@ -1161,6 +1135,7 @@ class DashboardActions:
         TransactionManager.deleteTransaction(self, self.main_dashboard) 
 
     def openData(self) -> None:
+        #TODO Separate for banking v. investments
         """
         Opens one or more data files and merges the results into the main Dashboard's DataFrame.
     
@@ -1168,13 +1143,13 @@ class DashboardActions:
         1. Invokes DataManager.openData() to present a file dialog for CSV or PKL files.
         2. If the user chooses a PKL file, sets the main_dashboard's save_file attribute and calls loadSaveFile().
         3. Otherwise, if CSV files are chosen, reads each CSV, processes it into a DataFrame, and appends it to
-           main_dashboard.all_data. 
+           main_dashboard.all_banking_data. 
         4. Updates the UI to reflect newly loaded transactions.
     
         Returns:
         -------
         None
-            This function modifies the application's data (main_dashboard.all_data) 
+            This function modifies the application's data (main_dashboard.all_banking_data) 
             and refreshes the UI in-place, without returning anything.
         """
         # 1) Prompt user for file(s)
@@ -1190,27 +1165,40 @@ class DashboardActions:
         if csv_files:
             parsed_data = []
             for csv_path in csv_files:
+                
                 # Read the CSV into a DataFrame
                 df = DataManager.readCSV(csv_path)
                 if not df.empty:
                     account_name = os.path.basename(csv_path).split(".")[0]
+                    
                     # Convert DataFrame to a standardized format
                     parsed_df, case = DataManager.parseNewDF(self.main_dashboard, df, account_name)
                     parsed_data.append(parsed_df)
+                    
                     # Track the 'case' or data pattern for this account
                     self.main_dashboard.account_cases[os.path.basename(csv_path)] = case
-                    if account_name not in self.main_dashboard.initial_account_balances:
-                        self.main_dashboard.initial_account_balances[account_name] = [self.main_dashboard.day_one, 0.00]
+                    
+                    # Check if the account already exists in the DataFrame
+                    if account_name not in self.main_dashboard.initial_account_balances["Account"].values:
+                        new_row = pd.DataFrame({
+                            "Account": [account_name],
+                            "Initial Date": [self.main_dashboard.day_one],
+                            "Initial Value": [0]
+                        })
+                        self.main_dashboard.initial_account_balances = pd.concat(
+                            [self.main_dashboard.initial_account_balances, new_row],
+                            ignore_index=True
+                        )
             
-            # Merge all newly read CSV data into main_dashboard.all_data
+            # Merge all newly read CSV data into main_dashboard.all_banking_data
             if parsed_data:
                 final_df = pd.concat(parsed_data, ignore_index=True)
-                self.main_dashboard.all_data = pd.concat(
-                    [self.main_dashboard.all_data, final_df],
+                self.main_dashboard.all_banking_data = pd.concat(
+                    [self.main_dashboard.all_banking_data, final_df],
                     ignore_index=True
                 )
-                self.main_dashboard.all_data = DataFrameProcessor.getDataFrameIndex(self.main_dashboard.all_data)
-                self.updateTable(self.main_dashboard.all_data)
+                self.main_dashboard.all_banking_data = DataFrameProcessor.getDataFrameIndex(self.main_dashboard.all_banking_data)
+                self.updateTable(self.main_dashboard.all_banking_data)
         else:
             # User cancelled or no valid files selected
             pass
@@ -1235,7 +1223,8 @@ class DashboardActions:
         """
         # Pass a copy of the data and balances to ensure we don't accidentally mutate the original.
         DataManager.exportData(
-            self.main_dashboard.all_data.copy(),
+            self.main_dashboard.all_banking_data.copy(),
+            self.main_dashboard.all_investment_data.copy(),
             self.main_dashboard.initial_account_balances.copy(),
             new_file=''
         )       
@@ -1244,7 +1233,7 @@ class DashboardActions:
         """
         Saves the current data to a .pkl file.
     
-        Uses DataManager.saveData to write the main_dashboard's all_data, initial_account_balances,
+        Uses DataManager.saveData to write the main_dashboard's all_banking_data, initial_account_balances,
         and account_cases to a pickle file. Updates the save_file path accordingly and then
         records it to disk via changeSaveFile().
     
@@ -1261,7 +1250,8 @@ class DashboardActions:
         """
         # Use the existing save_file path in main_dashboard.master, or prompt user if empty.
         self.main_dashboard.master.save_file = DataManager.saveData(
-            self.main_dashboard.all_data.copy(),
+            self.main_dashboard.all_banking_data.copy(),
+            self.main_dashboard.all_investment_data.copy(),
             self.main_dashboard.initial_account_balances.copy(),
             self.main_dashboard.account_cases,
             new_file=self.main_dashboard.master.save_file
@@ -1290,7 +1280,8 @@ class DashboardActions:
         """
         # Force user to pick a new file name by passing an empty 'new_file' arg
         self.main_dashboard.master.save_file = DataManager.saveData(
-            self.main_dashboard.all_data.copy(),
+            self.main_dashboard.all_banking_data.copy(),
+            self.main_dashboard.all_investment_data.copy(),
             self.main_dashboard.initial_account_balances.copy(),
             self.main_dashboard.account_cases,
             new_file=''
@@ -1305,7 +1296,7 @@ class DashboardActions:
         This function:
         1. Uses DataManager.loadSaveFile(...) to load pickled data: transaction DataFrame, 
            initial account balances, and account types.
-        2. If data is retrieved successfully, it updates self.main_dashboard.all_data 
+        2. If data is retrieved successfully, it updates self.main_dashboard.all_banking_data 
            and related dictionaries.
         3. Refreshes the UI table to display the newly loaded data.
     
@@ -1319,20 +1310,26 @@ class DashboardActions:
         None
             The main_dashboard's data structures and the UI table are updated in-place.
         """
-        all_data_df, init_bal_dict, acc_type_dict = DataManager.loadSaveFile(
+        all_banking_data_df, all_investment_data_df, init_bal_df, acc_type_dict = DataManager.loadSaveFile(
             self.main_dashboard.master.save_file
         )
 
         # Ensure proper assignment
-        if isinstance(all_data_df, pd.DataFrame):
-            self.main_dashboard.all_data = all_data_df.copy()
+        if isinstance(all_banking_data_df, pd.DataFrame):
+            self.main_dashboard.all_banking_data = all_banking_data_df.copy()
         else:
-            self.main_dashboard.all_data = pd.DataFrame()  # Fallback to an empty DataFrame
+            self.main_dashboard.all_banking_data = pd.DataFrame()  # Fallback to an empty DataFrame
+
+        # Ensure proper assignment
+        if isinstance(all_investment_data_df, pd.DataFrame):
+            self.main_dashboard.all_investment_data = all_investment_data_df.copy()
+        else:
+            self.main_dashboard.all_investment_data = pd.DataFrame()  # Fallback to an empty DataFrame
     
-        self.main_dashboard.initial_account_balances = init_bal_dict
+        self.main_dashboard.initial_account_balances = init_bal_df
         self.main_dashboard.account_cases = acc_type_dict
     
-        self.updateTable(self.main_dashboard.all_data)
+        self.updateTable(self.main_dashboard.all_banking_data)
     
     def updateTable(self, df:pd.DataFrame) -> None:
         """
@@ -1371,9 +1368,9 @@ class DashboardActions:
             float_cols = [5, 6, 7]  # Indices that contain monetary data
             column_data = self.main_dashboard.banking_column_widths
         else:
-            desired_columns = []
-            float_cols = [5, 6, 7]
-            column_data = self.main_dashboard.banking_column_widths
+            desired_columns = [0, 1, 2, 3, 4, 5, 6, 7]
+            float_cols = []
+            column_data = self.main_dashboard.investment_column_widths
 
         # 4) Configure Treeview columns
         column_names = list(column_data.keys())
@@ -1401,18 +1398,6 @@ class DashboardActions:
             for idx in float_cols:
                 if idx < len(formatted_row):
                     formatted_row[idx] = f"${formatted_row[idx] / 100:.2f}"
-                    
-            # If the Payee column (index 3) is empty and Description (index 2) contains a candidate payee,
-            # update both the formatted row and the underlying dataframe.
-            if str(formatted_row[3]).strip() == '':
-                description = str(formatted_row[2])
-                for candidate in self.main_dashboard.payees:
-                    if candidate and candidate.lower() in description.lower():
-                        formatted_row[3] = candidate
-                        self.main_dashboard.all_data.at[index, "Payee"] = candidate
-                        break
-                    
-            #TODO Use ML to guess payee
                             
             # Keep only the desired columns if specified
             if desired_columns:
@@ -1426,14 +1411,10 @@ class DashboardActions:
             self.widget_dashboard.tree,
             colors=[StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2]
         )
-        
-        self.updateCategoryToolbox(df)
-        self.updatePayeeToolbox(df)        
-        self.updateInvestmentAccountsToolbox(df)
 
-        self.updateBankingAccountsToolbox(df)
-        self.updateBalancesInDataFrame() 
-        self.updateBankingAccountsToolbox(df)
+        if self.main_dashboard.table_to_display == 'Banking':
+            self.updateBalancesInDataFrame() 
+        self.updateSideBar(df)
         
     def sortTableByColumn(self, tv: ttk.Treeview, col: str, sort_direction: bool) -> None:
         """
@@ -1461,14 +1442,10 @@ class DashboardActions:
             [StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2]
         )
             
-    def updateBankingAccountsToolbox(self, df: pd.DataFrame) -> None:
+    def updateSideBar(self, df: pd.DataFrame) -> None:
         """
-        Updates the sidebar listbox with banking accounts and their balances.
-        
-        This function clears the existing entries in the accounts listbox, then adds a default
-        "All Banking Accounts" option followed by each individual account from the current
-        account balances. Each balance is formatted (converted from cents to dollars with two decimal places).
-        
+        Updates the sidebar objects.
+    
         Parameters
         ----------
         df : pd.DataFrame
@@ -1479,96 +1456,161 @@ class DashboardActions:
         None
             Updates the UI in-place.
         """
-        # Clear previous entries from the accounts listbox
-        self.widget_dashboard.accounts_list.delete(0, tk.END)  # Clear previous entries
-
-        # Insert default "All Banking Accounts" option
-        self.widget_dashboard.accounts_list.insert(tk.END, "All Banking Accounts")
-     
-        # Insert individual banking accounts with their balances formatted as dollars
-        for account, balance in self.main_dashboard.current_account_balances.items():    
-            self.widget_dashboard.accounts_list.insert(tk.END, f"{account} ${balance / 100:.2f}")  # Format balance
-        
-    def updateInvestmentAccountsToolbox(self, df: pd.DataFrame) -> None:
-        #TODO
-        """Updates the sidebar listbox with only investment accounts and their balances."""
-        self
 
         
-    def updateCategoryToolbox(self, df: pd.DataFrame) -> None:
-        """
-        Refreshes the category_list Listbox with all known categories.
-    
-        This method:
-        1. Clears any existing entries from the category_list.
-        2. Inserts a special "All Categories" option at the top.
-        3. Iterates over self.main_dashboard.categories and inserts each category
-           into the category_list.
-    
-        Parameters
-        ----------
-        df : pd.DataFrame
-            A DataFrame representing the application's data. Although not directly
-            used here, it is provided for consistency with other toolbox update methods
-            and may be used later if filtering or additional logic is needed.
-    
-        Returns
-        -------
-        None
-            The category_list Listbox is updated in-place with the available categories.
-        """
-        # 1) Clear all existing entries in the category list
-        self.widget_dashboard.category_list.delete(0, tk.END)
-    
-        # 2) Add a special "All Categories" option
-        self.widget_dashboard.category_list.insert(tk.END, "All Categories")
-        
-        self.getCategories()
-    
-        # 3) Insert each category from main_dashboard.categories
-        for category in self.main_dashboard.categories:
-            self.widget_dashboard.category_list.insert(tk.END, category)
+        if self.main_dashboard.table_to_display == 'Banking':
+            allX = ['All Accounts', 'All Categories', 'All Payees', 'Reports']
+        elif self.main_dashboard.table_to_display == 'Investments':
+            allX = ['All Accounts', 'All Assets', 'All Actions', 'Reports']
+
+        for idx, listbox in enumerate(self.widget_dashboard.sidebar_listboxes):
+            listbox.delete(0, tk.END)   # Clear previous entries
+            listbox.insert(tk.END, allX[idx])
+
+            # Update based on banking dataframe
+            if self.main_dashboard.table_to_display == 'Banking':
+                # Update all accounts and balances
+                if idx == 0:
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Accounts")
+                    for account, balance in self.main_dashboard.current_account_balances.items():    
+                        listbox.insert(tk.END, f"{account} ${balance / 100:.2f}")
+                # Update all banking categories
+                elif idx == 1:
+                    self.getCategories()
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Categories")
+                    for category in self.main_dashboard.categories:
+                        listbox.insert(tk.END, category)
+                # Update all payees
+                elif idx == 2:
+                    self.toggleButtonStates(True)
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Payees")
+                    self.getPayees()
+                    for payee in self.main_dashboard.payees:
+                        listbox.insert(tk.END, payee)
+                # Update reports
+                elif idx == 3:
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Reports")
             
-    def updatePayeeToolbox(self, df: pd.DataFrame) -> None:
+            # Update based on investment dataframe
+            elif self.main_dashboard.table_to_display == 'Investments':
+                # Update all accounts and balances
+                if idx == 0:
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Accounts")
+                # Update investment assets
+                elif idx == 1:
+                    self.getAssets()
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Assets")
+                    for category in self.main_dashboard.assets:
+                        listbox.insert(tk.END, category)
+                # Update investement actions
+                elif idx == 2:
+                    self.toggleButtonStates(False)
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Actions")
+                    
+                # Update reports
+                elif idx == 3:
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Reports")
+
+    def toggleButtonStates(self, show: bool) -> None:
         """
-        Refreshes the payee_list Listbox with all known payees.
-    
-        This method:
-        1. Clears any existing entries from the payee_list.
-        2. Inserts a special "All Payees" option at the top.
-        3. Iterates over self.main_dashboard.payees and inserts each payee
-           into the payee_list.
-    
-        Parameters
-        ----------
-        df : pd.DataFrame
-            A DataFrame representing the application's data. Although not directly
-            used here, it is provided for consistency with other toolbox update methods
-            and may be used later if filtering or additional logic is needed.
-    
-        Returns
-        -------
-        None
-            The payee_list Listbox is updated in-place with the available payees.
+        Toggles visibility of the Payee listbox and its label.
+
+        Parameters:
+            show (bool): True to show, False to hide.
         """
-        # 1) Clear all existing entries in the payee list
-        self.widget_dashboard.payee_list.delete(0, tk.END)
-    
-        # 2) Add a special "All Payess" option
-        self.widget_dashboard.payee_list.insert(tk.END, "All Payees")
+        if show:
+            self.widget_dashboard.buttons[4].config(state=tk.NORMAL)
+            self.widget_dashboard.buttons[5].config(state=tk.NORMAL)
+            self.widget_dashboard.buttons[7].config(state=tk.DISABLED)
+        else:
+            self.widget_dashboard.buttons[4].config(state=tk.DISABLED)
+            self.widget_dashboard.buttons[5].config(state=tk.DISABLED)
+            self.widget_dashboard.buttons[7].config(state=tk.NORMAL)
+
+    def filterEntries(self, event=None, case=None) -> None:
+        """
+        Filters Tableview entries.
+        """
+        # Filter by account
+        if case == 1:
+            if self.main_dashboard.table_to_display == 'Banking':
+                column = 'Account'
+            elif self.main_dashboard.table_to_display == 'Investments':
+                column = 'Account'
+
+        # Filter by category
+        elif case == 2:
+            if self.main_dashboard.table_to_display == 'Banking':
+                column = 'Category'
+            elif self.main_dashboard.table_to_display == 'Investments':
+                column = 'Asset'
+
+        # Filter by payee/asset
+        elif case == 3:
+            if self.main_dashboard.table_to_display == 'Banking':
+                column = 'Payee'
+            elif self.main_dashboard.table_to_display == 'Investments':
+                return
+
+        # Reports - does not filter. 
+        elif case == 4:
+            return
         
-        self.getPayees()
+        listbox = self.widget_dashboard.sidebar_listboxes[case-1]
     
-        # 3) Insert each payee from main_dashboard.payees
-        for payee in self.main_dashboard.payees:
-            self.widget_dashboard.payee_list.insert(tk.END, payee)
+        selected_index = listbox.curselection()
+        if not selected_index:
+            return  # No selection made
+        
+        item = listbox.get(selected_index)
+
+        if case == 1:
+            item = item.split(" $")[0]
+
+        if "All" in item:
+            if self.main_dashboard.table_to_display == 'Banking':
+                filtered_df = self.main_dashboard.all_banking_data.copy()
+            elif self.main_dashboard.table_to_display == 'Investments':
+                filtered_df = self.main_dashboard.all_investment_data.copy()
+        else:
+            if self.main_dashboard.table_to_display == 'Banking':
+                filtered_df = self.main_dashboard.all_banking_data[
+                    self.main_dashboard.all_banking_data[column] == item
+                ].copy()
+            elif self.main_dashboard.table_to_display == 'Investments':
+                filtered_df = self.main_dashboard.all_investment_data[
+                    self.main_dashboard.all_investment_data[column] == item
+                ].copy()
+    
+        self.updateTable(filtered_df)
+
+    def switchAccountView(self, account_type: str) -> None:
+        """
+        Filters the data displayed based on a specified account type (e.g., "Banking" or "Investments").
+
+        """
+       
+        if self.main_dashboard.table_to_display == "Banking" :
+            if account_type == "Banking":
+                return
+            elif account_type == "Investments":
+                new_df = self.main_dashboard.all_investment_data
+
+        if self.main_dashboard.table_to_display == "Investments" :
+            if account_type == "Investments":
+                return
+            elif account_type == "Banking":
+                new_df = self.main_dashboard.all_banking_data
+
+        self.main_dashboard.table_to_display = account_type
+        self.updateTable(new_df)
 
     def trackBankBalances(self) -> None:
         """
         Opens a Toplevel window to manually review and update the latest balance for each banking account.
 
         The window displays three columns:
-        - Account name (from main_dashboard.all_data)
+        - Account name (from main_dashboard.all_banking_data)
         - Initial Date (loaded from main_dashboard.initial_account_balances or defaulted)
         - Initial Value (converted from cents to dollars)
 
@@ -1590,7 +1632,7 @@ class DashboardActions:
             The UI window is displayed, and when changes are applied, the DataFrame and UI are updated.
         """
     
-        if "Account" not in self.main_dashboard.all_data:
+        if "Account" not in self.main_dashboard.all_banking_data:
             return
     
         balance_window = tk.Toplevel(self.main_dashboard)
@@ -1609,8 +1651,8 @@ class DashboardActions:
         # Dictionary to hold references to the entry widgets for each account
         entry_fields = {}
     
-         # Get unique banking accounts from all_data
-        banking_accounts = self.main_dashboard.all_data["Account"].unique().tolist()
+         # Get unique banking accounts from all_banking_data
+        banking_accounts = self.main_dashboard.all_banking_data["Account"].unique().tolist()
         for row, account in enumerate(banking_accounts, start=1):
             tk.Label(balance_window, 
                      text=account, 
@@ -1774,21 +1816,21 @@ class DashboardActions:
            
     def updateBalancesInDataFrame(self) -> None:
         """
-        Propagates balance changes in the transactions DataFrame (master.all_data) based on the
+        Propagates balance changes in the transactions DataFrame (master.all_banking_data) based on the
         latest initial account balances stored in initial_account_balances.
 
         For each account in initial_account_balances:
         - If the "Initial Date" is not equal to self.day_one, the function calculates the
             propagated balance using calculateBalancesPerType and updates current_account_balances.
         - Otherwise, sets the current balance for that account to 0.00.
-        Finally, the updated master.all_data DataFrame is displayed by calling updateTable.
+        Finally, the updated master.all_banking_data DataFrame is displayed by calling updateTable.
 
         Returns
         -------
         None
-            The master.all_data DataFrame is updated in-place and the UI refreshed.
+            The master.all_banking_data DataFrame is updated in-place and the UI refreshed.
         """
-        if self.main_dashboard.all_data.empty:
+        if self.main_dashboard.all_banking_data.empty:
             return
         
         # Iterate over each row in the initial_account_balances DataFrame.
@@ -1798,8 +1840,8 @@ class DashboardActions:
             init_value  = row["Initial Value"]
             if init_date != self.main_dashboard.day_one:
                 # Calculate the propagated balance for this account and update current_account_balances.
-                self.main_dashboard.all_data, self.main_dashboard.current_account_balances[account] = self.calculateBalancesPerType(
-                                                                                self.main_dashboard.all_data.copy(), 
+                self.main_dashboard.all_banking_data, self.main_dashboard.current_account_balances[account] = self.calculateBalancesPerType(
+                                                                                self.main_dashboard.all_banking_data.copy(), 
                                                                                 account, 
                                                                                 init_date, 
                                                                                 init_value)
@@ -1899,6 +1941,428 @@ class DashboardActions:
         df.update(account_df)
     
         return df, last_balance
+        
+    def getPayees(self)-> None:
+        """
+        Loads payees from a text file and merges them with any existing
+        payees found in the main_dashboard.all_banking_data DataFrame.
+    
+        This function:
+        1. Reads lines from main_dashboard.payee_file.
+        2. Gathers unique 'Payees' entries from the all_banking_data DataFrame (if present).
+        3. Combines both sets of payees and sorts them.
+        4. Stores the final list of payees in main_dashboard.payees.
+    
+        Returns
+        -------
+        None
+            The main_dashboard.payees list is updated in-place; nothing is returned.
+        """
+        # 1) Load payees from file
+        with open(self.main_dashboard.payee_file, "r") as f:
+            file_payees = [line.strip() for line in f.readlines()]
+        
+        try:
+            # 2) Gather payees from the DataFrame if "Payee" column exists
+            if "Payee" in self.main_dashboard.all_banking_data.columns:
+                data_payees = set(self.main_dashboard.all_banking_data["Payee"].dropna().unique())
+            else:
+                data_payees = set()
+        except AttributeError:
+            # If all_banking_data is missing or not set, fall back to empty
+            data_payees = set()
+        
+        # 3) Merge both sets of payees; 4) sort and store in main_dashboard.payees
+        self.main_dashboard.payees = sorted(set(file_payees) | data_payees)   
+          
+    def getCategories(self) -> None:
+        """
+        Loads categories from a text file and merges them with any existing
+        categories found in the main_dashboard.all_banking_data DataFrame.
+    
+        This function:
+        Reads lines from main_dashboard.category_file.
+        Stores the final list of categories in main_dashboard.categories.
+    
+        Returns
+        -------
+        None
+            The main_dashboard.categories list is updated in-place; nothing is returned.
+        """
+        with open(self.main_dashboard.banking_categories_file, "r") as f:
+            file_categories = [line.strip() for line in f.readlines()]
+        
+        self.main_dashboard.categories = sorted(file_categories)   
+
+    def getAssets(self) -> None:
+        """
+        Loads assets from a text file
+    
+        This function:
+        Reads lines from asset_file.
+        Stores the final list of categories in main_dashboard.categories.
+    
+        Returns
+        -------
+        None
+            The main_dashboard.categories list is updated in-place; nothing is returned.
+        """
+
+        with open(self.main_dashboard.investment_assets_file, "r") as f:
+            assets = [line.strip() for line in f.readlines()]
+        
+        self.main_dashboard.assets = sorted(assets)   
+
+    def getInvestmentActions(self) -> None:
+        """
+        Loads actions from a text file
+    
+        This function:
+        Reads lines from asset_file.
+        Stores the final list of categories in main_dashboard.categories.
+    
+        Returns
+        -------
+        None
+            The main_dashboard.categories list is updated in-place; nothing is returned.
+        """
+
+        with open(self.main_dashboard.investment_actions_file, "r") as f:
+            actions = [line.strip() for line in f.readlines()]
+        
+        self.main_dashboard.actions = sorted(actions)   
+
+    def getInvestmentAccounts(self) -> None:
+        try:
+            return self.main_dashboard.all_investment_data["Account"].unique().tolist()
+        except:
+            return []
+    
+    def getBankingAccounts(self) -> None:
+        try:
+            return self.main_dashboard.all_banking_data["Account"].unique().tolist()
+        except:
+            return []
+
+    def viewInvestmentActions(self) -> None:
+        """
+        Opens a Tkinter Toplevel window for managing (add, modify, delete) categories.
+    
+        The window displays all current categories in a Listbox and provides:
+        - 'Add' and 'Modify' functions that use a simpledialog to get input from the user.
+        - 'Delete' function with confirmation.
+        - An 'Exit' button to close the window.
+        - Scrollable Listbox to handle many categories.
+    
+        Returns
+        -------
+        None
+            The action management UI is created and run in a child window; nothing is returned.
+        """
+        # Create a Toplevel window anchored relative to the main dashboard
+        actions_window = tk.Toplevel(self.main_dashboard)
+        actions_window.title("Manage Actions")
+        
+        # Set window dimensions and position
+        window_height, window_width = 400, 300
+        Windows.openRelativeWindow(
+            actions_window, 
+            main_width=self.main_dashboard.winfo_x(),
+            main_height=self.main_dashboard.winfo_y(),
+            width=window_width, 
+            height=window_height
+        )
+        
+        # Title label
+        ttk.Label(
+            actions_window, 
+            text="Actions",
+            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")
+        ).pack(pady=5)
+        
+        # Frame for the Listbox and scrollbar
+        list_frame = ttk.Frame(actions_window)
+        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+    
+        # Create a Listbox to display existing categories
+        actions_listbox = tk.Listbox(list_frame, height=15)
+        actions_listbox.pack(side=tk.LEFT, fill="both", expand=True)
+    
+        # Attach a vertical scrollbar to the listbox
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=actions_listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill="y")
+        actions_listbox.config(yscrollcommand=scrollbar.set)
+        
+        def loadActions() -> None:
+            """
+            Refreshes the main_dashboard.categories list and reloads them into the listbox.
+            """
+            self.getInvestmentActions() 
+
+            action_list = self.main_dashboard.actions
+
+            # Clear and repopulate the listbox
+            actions_listbox.delete(0, tk.END)
+            for action in action_list:
+                actions_listbox.insert(tk.END, action)
+    
+        def addAction() -> None:
+            """
+            Opens a small dialog to input a new action, then appends it to the list.
+            Updates the action file if successful.
+            """
+            new_action = simpledialog.askstring("Add Action", "Enter new action:")
+            if new_action and new_action not in self.main_dashboard.actions:
+                self.main_dashboard.actions.append(new_action)
+                actions_listbox.insert(tk.END, new_action)
+                saveActions()
+    
+        def modifyAction() -> None:
+            """
+            Opens a small dialog to rename the currently selected action.
+            """
+            selected_index = actions_listbox.curselection()
+            if selected_index:
+                old_action = actions_listbox.get(selected_index)
+                new_action = simpledialog.askstring(
+                    "Modify Action",
+                    "Enter new name:",
+                    initialvalue=old_action
+                )
+                if new_action and new_action not in self.main_dashboard.actions:
+                    self.main_dashboard.actions[selected_index[0]] = new_action
+                    actions_listbox.delete(selected_index)
+                    actions_listbox.insert(selected_index, new_action)
+                    saveActions()
+    
+        def deleteAction() -> None:
+            """
+            Deletes the currently selected action after user confirmation.
+            Updates the action file and reloads the listbox view.
+            """
+            selected_index = actions_listbox.curselection()
+            if selected_index:
+                confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this action?")
+                if confirm:
+                    # Remove item from self.main_dashboard.categories
+                    sorted(self.main_dashboard.actions.pop(selected_index[0]))
+                    actions_listbox.delete(selected_index)
+                    saveActions()
+                # Refresh categories in the UI if needed
+                self.viewInvestmentActions()
+    
+        def saveActions() -> None:
+            """
+            Overwrites the actions file with the current contents of main_dashboard.actions.
+            """
+            with open(self.main_dashboard.investment_actions_file, "w") as f:
+                for action in self.main_dashboard.actions:
+                    f.write(action + "\n")
+        
+        def closeWindow(event=None) -> None:
+            """
+            Closes the action window when called.
+            """
+            actions_window.destroy()
+    
+        # Call loadCategories initially to populate the listbox
+        loadActions()
+    
+        # Frame to hold the Add / Modify / Delete / Exit buttons
+        button_frame = tk.Frame(actions_window, bg=StyleConfig.BG_COLOR)
+        button_frame.pack(pady=10)
+    
+        # Button styling from StyleConfig
+        button_attributes = {
+            "bg": StyleConfig.BUTTON_COLOR,
+            "fg": StyleConfig.TEXT_COLOR,
+            "font": (StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE),
+            "relief": StyleConfig.BUTTON_STYLE,
+            "padx": StyleConfig.BUTTON_PADDING,
+            "pady": StyleConfig.BUTTON_PADDING,
+            "width": 10  # Ensure a consistent width for each button
+        }
+        
+       # Create the buttons
+        add_button = tk.Button(button_frame, text="Add", command=addAction, **button_attributes)
+        modify_button = tk.Button(button_frame, text="Modify", command=modifyAction, **button_attributes)
+        delete_button = tk.Button(button_frame, text="Delete", command=deleteAction, **button_attributes)
+        exit_button = tk.Button(button_frame, text="Exit", command=closeWindow, **button_attributes)
+    
+        # Lay out buttons: Add, Modify, Delete in the first row, Exit in the second row
+        add_button.grid(row=0, column=0, padx=5, pady=5)
+        modify_button.grid(row=0, column=1, padx=5, pady=5)
+        delete_button.grid(row=0, column=2, padx=5, pady=5)
+        exit_button.grid(row=1, column=0, columnspan=3, padx=5, pady=5)
+    
+        # Bind Escape key to close the window, and give focus to it
+        actions_window.bind("<Escape>", lambda event: closeWindow())
+        actions_window.focus_force()
+
+    def viewCategories(self) -> None:
+        """
+        Opens a Tkinter Toplevel window for managing (add, modify, delete) categories.
+    
+        The window displays all current categories in a Listbox and provides:
+        - 'Add' and 'Modify' functions that use a simpledialog to get input from the user.
+        - 'Delete' function with confirmation.
+        - An 'Exit' button to close the window.
+        - Scrollable Listbox to handle many categories.
+    
+        Returns
+        -------
+        None
+            The category management UI is created and run in a child window; nothing is returned.
+        """
+        # Create a Toplevel window anchored relative to the main dashboard
+        category_window = tk.Toplevel(self.main_dashboard)
+        category_window.title("Manage Categories")
+        
+        # Set window dimensions and position
+        window_height, window_width = 400, 300
+        Windows.openRelativeWindow(
+            category_window, 
+            main_width=self.main_dashboard.winfo_x(),
+            main_height=self.main_dashboard.winfo_y(),
+            width=window_width, 
+            height=window_height
+        )
+        
+        # Title label
+        ttk.Label(
+            category_window, 
+            text="Categories",
+            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")
+        ).pack(pady=5)
+        
+        # Frame for the Listbox and scrollbar
+        list_frame = ttk.Frame(category_window)
+        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+    
+        # Create a Listbox to display existing categories
+        category_listbox = tk.Listbox(list_frame, height=15)
+        category_listbox.pack(side=tk.LEFT, fill="both", expand=True)
+    
+        # Attach a vertical scrollbar to the listbox
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=category_listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill="y")
+        category_listbox.config(yscrollcommand=scrollbar.set)
+        
+        def loadCategories() -> None:
+            """
+            Refreshes the main_dashboard.categories list and reloads them into the listbox.
+            """
+            
+            self.getCategories()  # Merges file categories with any new ones from the DataFrame
+            self.getAssets()  # Merges file categories with any new ones from the DataFrame
+
+            if self.main_dashboard.table_to_display == 'Banking':
+                cat_list = self.main_dashboard.categories
+            elif self.main_dashboard.table_to_display == 'Investments':
+                cat_list = self.main_dashboard.assets
+
+            # Clear and repopulate the listbox
+            category_listbox.delete(0, tk.END)
+            for category in cat_list:
+                category_listbox.insert(tk.END, category)
+    
+        def addCategory() -> None:
+            """
+            Opens a small dialog to input a new category, then appends it to the list.
+            Updates the category file if successful.
+            """
+            new_category = simpledialog.askstring("Add Category", "Enter new category:")
+            if new_category and new_category not in self.main_dashboard.categories:
+                self.main_dashboard.categories.append(new_category)
+                category_listbox.insert(tk.END, new_category)
+                saveCategories()
+    
+        def modifyCategory() -> None:
+            """
+            Opens a small dialog to rename the currently selected category.
+            """
+            selected_index = category_listbox.curselection()
+            if selected_index:
+                old_category = category_listbox.get(selected_index)
+                new_category = simpledialog.askstring(
+                    "Modify Category",
+                    "Enter new name:",
+                    initialvalue=old_category
+                )
+                if new_category and new_category not in self.main_dashboard.categories:
+                    self.main_dashboard.categories[selected_index[0]] = new_category
+                    category_listbox.delete(selected_index)
+                    category_listbox.insert(selected_index, new_category)
+                    saveCategories()
+    
+        def deleteCategory() -> None:
+            """
+            Deletes the currently selected category after user confirmation.
+            Updates the category file and reloads the listbox view.
+            """
+            selected_index = category_listbox.curselection()
+            if selected_index:
+                confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this category?")
+                if confirm:
+                    # Remove item from self.main_dashboard.categories
+                    sorted(self.main_dashboard.categories.pop(selected_index[0]))
+                    category_listbox.delete(selected_index)
+                    saveCategories()
+                # Refresh categories in the UI if needed
+                self.viewCategories()
+    
+        def saveCategories() -> None:
+            """
+            Overwrites the category file with the current contents of main_dashboard.categories.
+            """
+            if self.main_dashboard.table_to_display == 'Banking':
+                cat_file = self.main_dashboard.banking_categories
+            elif self.main_dashboard.table_to_display == 'Investments':
+                cat_file = self.main_dashboard.investment_assets
+            
+            with open(cat_file, "w") as f:
+                for category in self.main_dashboard.categories:
+                    f.write(category + "\n")
+        
+        def closeWindow(event=None) -> None:
+            """
+            Closes the category window when called.
+            """
+            category_window.destroy()
+    
+        # Call loadCategories initially to populate the listbox
+        loadCategories()
+    
+        # Frame to hold the Add / Modify / Delete / Exit buttons
+        button_frame = tk.Frame(category_window, bg=StyleConfig.BG_COLOR)
+        button_frame.pack(pady=10)
+    
+        # Button styling from StyleConfig
+        button_attributes = {
+            "bg": StyleConfig.BUTTON_COLOR,
+            "fg": StyleConfig.TEXT_COLOR,
+            "font": (StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE),
+            "relief": StyleConfig.BUTTON_STYLE,
+            "padx": StyleConfig.BUTTON_PADDING,
+            "pady": StyleConfig.BUTTON_PADDING,
+            "width": 10  # Ensure a consistent width for each button
+        }
+        
+       # Create the buttons
+        add_button = tk.Button(button_frame, text="Add", command=addCategory, **button_attributes)
+        modify_button = tk.Button(button_frame, text="Modify", command=modifyCategory, **button_attributes)
+        delete_button = tk.Button(button_frame, text="Delete", command=deleteCategory, **button_attributes)
+        exit_button = tk.Button(button_frame, text="Exit", command=closeWindow, **button_attributes)
+    
+        # Lay out buttons: Add, Modify, Delete in the first row, Exit in the second row
+        add_button.grid(row=0, column=0, padx=5, pady=5)
+        modify_button.grid(row=0, column=1, padx=5, pady=5)
+        delete_button.grid(row=0, column=2, padx=5, pady=5)
+        exit_button.grid(row=1, column=0, columnspan=3, padx=5, pady=5)
+    
+        # Bind Escape key to close the window, and give focus to it
+        category_window.bind("<Escape>", lambda event: closeWindow())
+        category_window.focus_force()
 
     def viewPayees(self) -> None:
         """
@@ -2053,218 +2517,6 @@ class DashboardActions:
         # Bind Escape key to close the window, and give focus to it
         payee_window.bind("<Escape>", lambda event: closeWindow())
         payee_window.focus_force()
-        
-    def getPayees(self)-> None:
-        """
-        Loads payees from a text file and merges them with any existing
-        payees found in the main_dashboard.all_data DataFrame.
-    
-        This function:
-        1. Reads lines from main_dashboard.payee_file.
-        2. Gathers unique 'Payees' entries from the all_data DataFrame (if present).
-        3. Combines both sets of payees and sorts them.
-        4. Stores the final list of payees in main_dashboard.payees.
-    
-        Returns
-        -------
-        None
-            The main_dashboard.payees list is updated in-place; nothing is returned.
-        """
-        # 1) Load payees from file
-        with open(self.main_dashboard.payee_file, "r") as f:
-            file_payees = [line.strip() for line in f.readlines()]
-        
-        try:
-            # 2) Gather payees from the DataFrame if "Payee" column exists
-            if "Payee" in self.main_dashboard.all_data.columns:
-                data_payees = set(self.main_dashboard.all_data["Payee"].dropna().unique())
-            else:
-                data_payees = set()
-        except AttributeError:
-            # If all_data is missing or not set, fall back to empty
-            data_payees = set()
-        
-        # 3) Merge both sets of payees; 4) sort and store in main_dashboard.payees
-        self.main_dashboard.payees = sorted(set(file_payees) | data_payees)   
-          
-    def getCategories(self) -> None:
-        """
-        Loads categories from a text file and merges them with any existing
-        categories found in the main_dashboard.all_data DataFrame.
-    
-        This function:
-        Reads lines from main_dashboard.category_file.
-        Stores the final list of categories in main_dashboard.categories.
-    
-        Returns
-        -------
-        None
-            The main_dashboard.categories list is updated in-place; nothing is returned.
-        """
-        with open(self.main_dashboard.category_file, "r") as f:
-            file_categories = [line.strip() for line in f.readlines()]
-        
-        self.main_dashboard.categories = sorted(file_categories)   
-
-    def viewCategories(self) -> None:
-        """
-        Opens a Tkinter Toplevel window for managing (add, modify, delete) categories.
-    
-        The window displays all current categories in a Listbox and provides:
-        - 'Add' and 'Modify' functions that use a simpledialog to get input from the user.
-        - 'Delete' function with confirmation.
-        - An 'Exit' button to close the window.
-        - Scrollable Listbox to handle many categories.
-    
-        Returns
-        -------
-        None
-            The category management UI is created and run in a child window; nothing is returned.
-        """
-        # Create a Toplevel window anchored relative to the main dashboard
-        category_window = tk.Toplevel(self.main_dashboard)
-        category_window.title("Manage Categories")
-        
-        # Set window dimensions and position
-        window_height, window_width = 400, 300
-        Windows.openRelativeWindow(
-            category_window, 
-            main_width=self.main_dashboard.winfo_x(),
-            main_height=self.main_dashboard.winfo_y(),
-            width=window_width, 
-            height=window_height
-        )
-        
-        # Title label
-        ttk.Label(
-            category_window, 
-            text="Categories",
-            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")
-        ).pack(pady=5)
-        
-        # Frame for the Listbox and scrollbar
-        list_frame = ttk.Frame(category_window)
-        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
-    
-        # Create a Listbox to display existing categories
-        category_listbox = tk.Listbox(list_frame, height=15)
-        category_listbox.pack(side=tk.LEFT, fill="both", expand=True)
-    
-        # Attach a vertical scrollbar to the listbox
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=category_listbox.yview)
-        scrollbar.pack(side=tk.RIGHT, fill="y")
-        category_listbox.config(yscrollcommand=scrollbar.set)
-        
-        def loadCategories() -> None:
-            """
-            Refreshes the main_dashboard.categories list and reloads them into the listbox.
-            """
-            self.getCategories()  # Merges file categories with any new ones from the DataFrame
-    
-            # Clear and repopulate the listbox
-            category_listbox.delete(0, tk.END)
-            for category in self.main_dashboard.categories:
-                category_listbox.insert(tk.END, category)
-    
-        def addCategory() -> None:
-            """
-            Opens a small dialog to input a new category, then appends it to the list.
-            Updates the category file if successful.
-            """
-            new_category = simpledialog.askstring("Add Category", "Enter new category:")
-            if new_category and new_category not in self.main_dashboard.categories:
-                self.main_dashboard.categories.append(new_category)
-                category_listbox.insert(tk.END, new_category)
-                saveCategories()
-    
-        def modifyCategory() -> None:
-            """
-            Opens a small dialog to rename the currently selected category.
-            """
-            selected_index = category_listbox.curselection()
-            if selected_index:
-                old_category = category_listbox.get(selected_index)
-                new_category = simpledialog.askstring(
-                    "Modify Category",
-                    "Enter new name:",
-                    initialvalue=old_category
-                )
-                if new_category and new_category not in self.main_dashboard.categories:
-                    self.main_dashboard.categories[selected_index[0]] = new_category
-                    category_listbox.delete(selected_index)
-                    category_listbox.insert(selected_index, new_category)
-                    saveCategories()
-    
-        def deleteCategory() -> None:
-            """
-            Deletes the currently selected category after user confirmation.
-            Updates the category file and reloads the listbox view.
-            """
-            selected_index = category_listbox.curselection()
-            if selected_index:
-                confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this category?")
-                if confirm:
-                    # Remove item from self.main_dashboard.categories
-                    sorted(self.main_dashboard.categories.pop(selected_index[0]))
-                    category_listbox.delete(selected_index)
-                    saveCategories()
-                # Refresh categories in the UI if needed
-                self.viewCategories()
-    
-        def saveCategories() -> None:
-            """
-            Overwrites the category file with the current contents of main_dashboard.categories.
-            """
-            with open(self.main_dashboard.category_file, "w") as f:
-                for category in self.main_dashboard.categories:
-                    f.write(category + "\n")
-        
-        def closeWindow(event=None) -> None:
-            """
-            Closes the category window when called.
-            """
-            category_window.destroy()
-    
-        # Call loadCategories initially to populate the listbox
-        loadCategories()
-    
-        # Frame to hold the Add / Modify / Delete / Exit buttons
-        button_frame = tk.Frame(category_window, bg=StyleConfig.BG_COLOR)
-        button_frame.pack(pady=10)
-    
-        # Button styling from StyleConfig
-        button_attributes = {
-            "bg": StyleConfig.BUTTON_COLOR,
-            "fg": StyleConfig.TEXT_COLOR,
-            "font": (StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE),
-            "relief": StyleConfig.BUTTON_STYLE,
-            "padx": StyleConfig.BUTTON_PADDING,
-            "pady": StyleConfig.BUTTON_PADDING,
-            "width": 10  # Ensure a consistent width for each button
-        }
-        
-       # Create the buttons
-        add_button = tk.Button(button_frame, text="Add", command=addCategory, **button_attributes)
-        modify_button = tk.Button(button_frame, text="Modify", command=modifyCategory, **button_attributes)
-        delete_button = tk.Button(button_frame, text="Delete", command=deleteCategory, **button_attributes)
-        exit_button = tk.Button(button_frame, text="Exit", command=closeWindow, **button_attributes)
-    
-        # Lay out buttons: Add, Modify, Delete in the first row, Exit in the second row
-        add_button.grid(row=0, column=0, padx=5, pady=5)
-        modify_button.grid(row=0, column=1, padx=5, pady=5)
-        delete_button.grid(row=0, column=2, padx=5, pady=5)
-        exit_button.grid(row=1, column=0, columnspan=3, padx=5, pady=5)
-    
-        # Bind Escape key to close the window, and give focus to it
-        category_window.bind("<Escape>", lambda event: closeWindow())
-        category_window.focus_force()
-
-    def displayReports(self):
-        #TODO
-        """
-
-        """
-        self
 
     def viewOptions(self, new_settings: bool = True) -> None:
         """
@@ -2553,13 +2805,25 @@ class DashboardActions:
             """
             # Retrieve the 'No.' from the row's values, which identifies the record in the DataFrame
             selected_number = int(self.widget_dashboard.tree.item(item, "values")[0])
-            index_to_update = self.main_dashboard.all_data[self.main_dashboard.all_data["No."] == selected_number].index
+            if self.main_dashboard.table_to_display == 'Banking':
+                df_to_update = self.main_dashboard.all_banking_data
+            elif self.main_dashboard.table_to_display == 'Investments':
+                df_to_update = self.main_dashboard.all_investment_data
+
+            index_to_update = df_to_update[df_to_update["No."] == selected_number].index
 
             if not index_to_update.empty:
                 # Handle numeric columns (Payment, Deposit, Balance)
                 if col_name in ["Payment", "Deposit", "Balance"]:
                     try:
                         new_value_converted  = float(new_value.replace("$", "").replace(",", "")) * 100
+                    except ValueError:
+                        messagebox.showerror("Invalid Input", "Please enter a valid number.")
+                        return
+                    
+                elif col_name in ["Units"]:
+                    try:
+                        new_value_converted  = float(new_value)
                     except ValueError:
                         messagebox.showerror("Invalid Input", "Please enter a valid number.")
                         return
@@ -2571,7 +2835,7 @@ class DashboardActions:
                     new_value_converted = new_value
                     
                 # Update the DataFrame in-place
-                self.main_dashboard.all_data.at[index_to_update[0], col_name] = new_value_converted
+                df_to_update.at[index_to_update[0], col_name] = new_value_converted
     
                 # Now update the corresponding cell in the Treeview without reloading the entire table
                 current_values = list(self.widget_dashboard.tree.item(item, "values"))
@@ -2673,7 +2937,7 @@ class DashboardActions:
         # =======================================
         #  Text / Numeric Editing Columns
         # =======================================
-        if col_name in ["Payment", "Deposit", "Balance", "Note"]:
+        if col_name in ["Payment", "Deposit", "Balance", "Note", "Symbol"]:
             x, y, width, height = self.widget_dashboard.tree.bbox(item, column)
             
             # Create an Entry widget over the cell
@@ -2693,7 +2957,7 @@ class DashboardActions:
         # =======================================
         #  Dropdown Columns
         # =======================================
-        elif col_name in ["Category", "Account", "Payee", "Account Type"]:
+        elif col_name in ["Category", "Account", "Payee", "Action", "Asset"]:
             x, y, width, height = self.widget_dashboard.tree.bbox(item, column)
             
             # Create a readonly Combobox over the cell
@@ -2706,10 +2970,12 @@ class DashboardActions:
             elif col_name == "Payee":
                 dropdown["values"] = self.main_dashboard.payees
             elif col_name == "Account":
-                accounts = self.main_dashboard.all_data["Account"].unique().tolist()
+                accounts = self.getBankingAccounts()
                 dropdown["values"] = accounts
-            elif col_name == "Account Type":
-                dropdown["values"] = ['Banking', 'Investments']
+            elif col_name == "Asset":
+                dropdown["values"] = self.main_dashboard.assets
+            elif col_name == 'Action':
+                dropdown["values"] = self.main_dashboard.actions
     
             dropdown.set(current_value)
             
@@ -2719,6 +2985,19 @@ class DashboardActions:
             
             # If user moves focus away, cancel editing
             dropdown.bind("<FocusOut>", cancelEdit)
+
+    def addInvestmentAccount(self) -> None:
+        self
+    
+    def addBankingAccount(self) -> None:
+        self
+
+    def displayReports(self):
+        #TODO
+        """
+
+        """
+        self
     
     def smoothScroll(self, event=None) -> None:
         """
@@ -2765,9 +3044,9 @@ class DashboardActions:
         Prompts the user for confirmation and, if accepted, clears all transactions.
     
         This method:
-        1. Checks if main_dashboard.all_data has entries.
+        1. Checks if main_dashboard.all_banking_data has entries.
         2. Asks the user to confirm deletion of all transactions.
-        3. If confirmed, resets main_dashboard.all_data to an empty DataFrame,
+        3. If confirmed, resets main_dashboard.all_banking_data to an empty DataFrame,
            and removes all items from the accounts list, investments list, 
            and the Treeview.
     
@@ -2782,7 +3061,7 @@ class DashboardActions:
         None
             Modifies the application's data and UI elements in-place.
         """
-        if not self.main_dashboard.all_data.empty:
+        if not self.main_dashboard.all_banking_data.empty:
             confirm = messagebox.askyesno(
                 "Confirm Delete",
                 "Are you sure you want to delete all transaction(s)?"
@@ -2792,18 +3071,27 @@ class DashboardActions:
                 return
             
             # If confirmed, clear everything
-            self.main_dashboard.all_data = pd.DataFrame()
-            self.widget_dashboard.accounts_list.delete(0, tk.END)
-            self.widget_dashboard.investments_list.delete(0, tk.END)
+            self.main_dashboard.all_banking_data = pd.DataFrame()
+            self.main_dashboard.all_investment_data = pd.DataFrame()
+            self.main_dashboard.table_to_display = 'Banking' # Or Investments
+            self.main_dashboard.initial_account_balances = pd.DataFrame(columns=['Account', 'Initial Date', 'Initial Value'])
+
+            self.main_dashboard.current_account_balances = {}
+            self.main_dashboard.account_cases = {}
+
             self.widget_dashboard.tree.delete(*self.widget_dashboard.tree.get_children())
+
+            for listbox in self.widget_dashboard.sidebar_listboxes:
+                listbox.delete(0, tk.END)
     
     def searchData(
                     self,
                     single_query: str | None = None,
                     advanced_criteria: dict[str, str] | None = None
                 ) -> None:
+        #TODO Change for both banking and investment data
         """
-        Filters self.main_dashboard.all_data based on either a single query
+        Filters self.main_dashboard.all_banking_data based on either a single query
         or an advanced dictionary of per-column queries. Then updates the table.
     
         Parameters
@@ -2831,11 +3119,11 @@ class DashboardActions:
         - If the data is missing/empty, we show a warning and do nothing.
         """
         # 1) Make sure we have data
-        if not hasattr(self.main_dashboard, "all_data") or self.main_dashboard.all_data.empty:
+        if not hasattr(self.main_dashboard, "all_banking_data") or self.main_dashboard.all_banking_data.empty:
             messagebox.showwarning("Warning", "No data to search!")
             return
     
-        original_df = self.main_dashboard.all_data.copy()
+        original_df = self.main_dashboard.all_banking_data.copy()
     
         # 2) Determine if we got a single_query or advanced_criteria
         if single_query and advanced_criteria:
@@ -2911,18 +3199,20 @@ class DashboardActions:
             return
         
     def searchTransactions(self) -> None:
+        #TODO Change for both banking and investment data
         """
         Handles the 'basic' (single-field) search from the search_entry in the toolbar.
         """
         query = self.widget_dashboard.search_entry.get().strip().lower()
         # If user typed nothing, just revert to entire dataset
         if not query:
-            self.updateTable(self.main_dashboard.all_data)
+            self.updateTable(self.main_dashboard.all_banking_data)
             return
     
         self.searchData(single_query=query)  # Calls the unified search logic    
 
     def openAdvancedSearch(self) -> None:
+        #TODO Change for both banking and investment data
         """
         Opens a small Toplevel window that provides an entry box for each column,
         enabling an advanced filtering mechanism.
@@ -2930,7 +3220,7 @@ class DashboardActions:
         After the user clicks 'Search', we build a dict of column->user_input
         and call self.searchData(advanced_criteria=that_dict).
         """
-        if not hasattr(self.main_dashboard, "all_data") or self.main_dashboard.all_data.empty:
+        if not hasattr(self.main_dashboard, "all_banking_data") or self.main_dashboard.all_banking_data.empty:
             messagebox.showwarning("Warning", "No data to search!")
             return
     
@@ -2950,7 +3240,7 @@ class DashboardActions:
         entry_widgets = {}
     
         # Make a labeled Entry for each column
-        for col_name in self.main_dashboard.all_data.columns:
+        for col_name in self.main_dashboard.all_banking_data.columns:
             row_frame = ttk.Frame(input_frame)
             row_frame.pack(fill="x", pady=2)
     
@@ -2994,7 +3284,7 @@ class DashboardActions:
         search_button.pack(pady=10)
     
         # Handle geometry
-        window_width, window_height = 300, (len(self.main_dashboard.all_data.columns) * 30) + 60
+        window_width, window_height = 300, (len(self.main_dashboard.all_banking_data.columns) * 30) + 60
         search_window.geometry(f"{window_width}x{window_height}")
         search_window.resizable(False, False)
     
@@ -3003,187 +3293,6 @@ class DashboardActions:
         search_window.bind("<Escape>", lambda e: search_window.destroy())
         
         search_window.focus_force()
-    
-    def filterByAccountType(self, account_type: str) -> None:
-        """
-        Filters the transactions based on a specified account type (e.g., "Banking" or "Investments").
-        
-        This method:
-        1. Checks if main_dashboard.all_data has entries.
-        2. Subsets the DataFrame where the "Account Type" column matches the given account_type.
-        3. Calls updateTable() with the filtered DataFrame to refresh the UI.
-    
-        Parameters
-        ----------
-        account_type : str
-            The type of account to filter by, e.g. "Banking" or "Investments".
-    
-        Returns
-        -------
-        None
-            The Treeview is updated to show only rows whose "Account Type" matches the passed argument.
-        """
-        # Ensure all_data exists before filtering
-        if not hasattr(self.main_dashboard, "all_data") or self.main_dashboard.all_data.empty:
-            messagebox.showwarning("Warning", "No data available to filter!")
-            return
-    
-        # Filter by account type and update the UI
-        filtered_df = self.main_dashboard.all_data[
-            self.main_dashboard.all_data["Account Type"] == account_type
-        ]
-        self.updateTable(filtered_df)
-    
-    def filterTransactionsByInvestmentAccount(self, event: tk.Event | None = None) -> None:
-        """
-        Filters transactions based on the selected investment account from the investments_list Listbox.
-    
-        This method:
-        1. Retrieves the user's selection (e.g., "All Investment Accounts" or "AccountName $XXXX.XX").
-        2. If "All Investment Accounts" is chosen, shows the entire dataset.
-        3. Otherwise, extracts the account_name by splitting on " $" and filters rows
-           where the "Account" column matches the extracted name.
-        4. Updates the UI to display only the matching transactions.
-    
-        Parameters
-        ----------
-        event : tk.Event | None, optional
-            The event triggered (generally on a listbox double-click). Defaults to None.
-    
-        Returns
-        -------
-        None
-            The Treeview is updated to display only the filtered rows for the chosen investment account.
-        """
-        selected_index = self.widget_dashboard.investments_list.curselection()
-        if not selected_index:
-            return
-    
-        selected_text = self.widget_dashboard.investments_list.get(selected_index)
-    
-        # If "All Investment Accounts," revert to the full dataset
-        if selected_text == "All Investment Accounts":
-            filtered_df = self.main_dashboard.all_data.copy()
-        else:
-            # Extract the account name before the " $" suffix
-            account_name = selected_text.split(" $")[0]
-            filtered_df = self.main_dashboard.all_data[
-                self.main_dashboard.all_data["Account"] == account_name
-            ].copy()
-    
-        self.updateTable(filtered_df)
-        
-    def filterTransactionsByCategory(self, event: tk.Event | None = None) -> None:
-        """
-        Filters transactions by the selected category from the category_list Listbox.
-    
-        This method:
-        1. Retrieves the user's category selection from self.widget_dashboard.category_list.
-        2. If "All Categories" is selected, resets the table to show all data.
-        3. Otherwise, displays only rows from main_dashboard.all_data
-           where the 'Category' column matches the user's selection.
-        4. Updates the Treeview widget with the filtered DataFrame.
-    
-        Parameters
-        ----------
-        event : tk.Event | None, optional
-            The event object if triggered by a Listbox double-click.
-            Defaults to None.
-    
-        Returns
-        -------
-        None
-            The application's UI is updated to display the relevant transactions in-place.
-        """
-        selected_index = self.widget_dashboard.category_list.curselection()
-        if not selected_index:
-            return  # No selection made
-    
-        category = self.widget_dashboard.category_list.get(selected_index)
-    
-        if category == "All Categories":
-            filtered_df = self.main_dashboard.all_data.copy()
-        else:
-            filtered_df = self.main_dashboard.all_data[
-                self.main_dashboard.all_data["Category"] == category
-            ].copy()
-    
-        self.updateTable(filtered_df)
-        
-    def filterTransactionsByPayee(self, event: tk.Event | None = None) -> None:
-        """
-        Filters transactions by the selected payee from the payee_list Listbox.
-    
-        This method:
-        1. Retrieves the user's payee selection from self.widget_dashboard.payee_list.
-        2. If "All Payees" is selected, resets the table to show all data.
-        3. Otherwise, displays only rows from main_dashboard.all_data
-           where the 'Payee' column matches the user's selection.
-        4. Updates the Treeview widget with the filtered DataFrame.
-    
-        Parameters
-        ----------
-        event : tk.Event | None, optional
-            The event object if triggered by a Listbox double-click.
-            Defaults to None.
-    
-        Returns
-        -------
-        None
-            The application's UI is updated to display the relevant transactions in-place.
-        """
-        selected_index = self.widget_dashboard.payee_list.curselection()
-        if not selected_index:
-            return  # No selection made
-    
-        payee = self.widget_dashboard.payee_list.get(selected_index)
-    
-        if payee == "All Payees":
-            filtered_df = self.main_dashboard.all_data.copy()
-        else:
-            #TODO FIX EMPTY FILTERED DF
-            filtered_df = self.main_dashboard.all_data[
-                self.main_dashboard.all_data["Payee"] == payee
-            ].copy()
-    
-        self.updateTable(filtered_df)
-        
-    def filterTransactionsByBankingAccount(self, event: tk.Event | None = None) -> None:
-        """
-        Filters transactions based on the selected banking account from the accounts_list Listbox.
-    
-        This method:
-        1. Retrieves the user's selection (e.g., "All Banking Accounts" or "AccountName $XXXX.XX").
-        2. If "All Banking Accounts" is chosen, shows the entire dataset.
-        3. Otherwise, extracts the account_name by splitting on " $" and filters rows
-           where the "Account" column matches the extracted name.
-        4. Updates the UI to display only the matching transactions.
-    
-        Parameters
-        ----------
-        event : tk.Event | None, optional
-            The event triggered (generally on a listbox double-click). Defaults to None.
-    
-        Returns
-        -------
-        None
-            The Treeview is updated to display only the filtered rows for the chosen banking account.
-        """
-        selected_index = self.widget_dashboard.accounts_list.curselection()
-        if not selected_index:
-            return
-    
-        selected_text = self.widget_dashboard.accounts_list.get(selected_index)
-    
-        if selected_text == "All Banking Accounts":
-            filtered_df = self.main_dashboard.all_data.copy()
-        else:
-            account_name = selected_text.split(" $")[0]
-            filtered_df = self.main_dashboard.all_data[
-                self.main_dashboard.all_data["Account"] == account_name
-            ].copy()
-    
-        self.updateTable(filtered_df)
         
 
     
@@ -3196,6 +3305,7 @@ class Dashboard(tk.Frame):
         
         self.ui_manager = DashboardUI(parent_dashboard=self, master=self)
         self.ui_actions = DashboardActions(self, self.ui_manager)
+        self.ui_actions.toggleButtonStates(True)
         
         self.master.rowconfigure(0, weight=1)
         self.master.columnconfigure(0, weight=1)
@@ -3216,40 +3326,41 @@ class Dashboard(tk.Frame):
             "Balance": 90,
             "Account": 150,
             "Note": 250, 
-            "Account Type": 0
         }      
         
-        
         self.investment_column_widths = {
-            "No.": 30,
-            "Date": 60,
-            "Payee": 350,
-            "Category": 200,
-            "Gain": 80,
-            "Loss": 80,
-            "Balance": 100,
-            "Account": 100,
-            "Note": 200, 
-            "Account Type": 100
+            "No.": 50,
+            "Date": 100,
+            "Account": 350,
+            "Action": 200,
+            "Asset": 150,
+            "Symbol": 120,
+            "Units": 120,
+            "Note": 300,
         }
         
         self.day_one = "1970-1-1"
+
+        self.all_banking_data = pd.DataFrame()
+        self.all_investment_data = pd.DataFrame()
+        self.table_to_display = 'Banking' # Or Investments
         
-        self.initial_account_balances = {}
+        self.initial_account_balances = pd.DataFrame(columns=['Account', 'Initial Date', 'Initial Value'])
         self.current_account_balances = {}
         self.account_cases = {}
         
-        # 
-        self.table_to_display = 'Banking'
-        
-        self.category_file = os.path.join(os.path.dirname(__file__), "Categories.txt")
-        self.ui_actions.getCategories()
-        
+        self.banking_categories_file  = os.path.join(os.path.dirname(__file__), "Banking_Categories.txt")
+        self.investment_assets_file   = os.path.join(os.path.dirname(__file__), "Investments_Assets.txt")
+        self.investment_actions_file  = os.path.join(os.path.dirname(__file__), "Investments_Actions.txt")
         self.payee_file = os.path.join(os.path.dirname(__file__), "Payees.txt")
+        self.ui_actions.getCategories()
+        self.ui_actions.getAssets()
+        self.ui_actions.getInvestmentActions()
         self.ui_actions.getPayees()
-        
-        self.all_data = pd.DataFrame()
-        
+
+        self.banking_accounts = self.ui_actions.getBankingAccounts()
+        self.investment_accounts = self.ui_actions.getInvestmentAccounts()
+
         # Delay loading the saved file until UI is ready
         self.after(500, self.ui_actions.loadSaveFile)
         
@@ -3309,8 +3420,24 @@ class Dashboard(tk.Frame):
         """
         self.ui_actions.deleteTransaction()
 
+    def addInvestmentAccount(self) -> None:
+        """
+        Add investment account to list of investment accounts
+    
+        Delegates the action to ui_actions.addInvestmentAccount().
+        """
+        self.ui_actions.addInvestmentAccount()
+
+    def addBankingAccount(self) -> None:
+        """
+        Add banking account to list of banking accounts
+    
+        Delegates the action to ui_actions.addBankingAccount().
+        """
+        self.ui_actions.addBankingAccount()
+
     def trainClassifier(self) -> None:
-        payee_classifier, category_classifier = Classifier.trainPayeeAndCategoryClassifier(self.all_data) 
+        payee_classifier, category_classifier = Classifier.trainPayeeAndCategoryClassifier(self.all_banking_data) 
 
         predicted_payee, predicted_category = Classifier.predictTransactionLabels(
                                                                 description="Advance Auto Parts", 
@@ -3320,43 +3447,3 @@ class Dashboard(tk.Frame):
                                                                 payee_pipeline = payee_classifier, 
                                                                 category_pipeline = category_classifier
                                                                 )
-
-        
-class TEMPHOLDING:
-        
-    def updateBankingAccountsToolbox(self, df: pd.DataFrame) -> None:
-        """Updates the sidebar listbox with only banking accounts and their balances."""
-        self.accounts_list.delete(0, tk.END)  # Clear previous entries
-
-        # Add "All Banking Accounts" option
-        self.accounts_list.insert(tk.END, "All Banking Accounts")
-     
-        # Insert individual banking accounts
-        for account, balance in self.current_account_balances.items():    
-            self.accounts_list.insert(tk.END, f"{account} ${balance / 100:.2f}")  # Format balance
-            
-    def updateInvestmentAccountsToolbox(self, df: pd.DataFrame) -> None:
-        """Updates the sidebar listbox with only investment accounts and their balances."""
-        self.investments_list.delete(0, tk.END)  # Clear previous entries
-    
-        # Filter only investment accounts
-        investment_df = df[df["Account Type"] == "Investment"]
-    
-        # Calculate account balances
-        self.investment_balances = DataFrameProcessor.accountBalance(investment_df)
-    
-        # Add "All Investment Accounts" option
-        self.investments_list.insert(tk.END, "All Investment Accounts")
-    
-        # Insert individual investment accounts
-        for account, balance in self.investment_balances.items():
-            self.investments_list.insert(tk.END, f"{account} ${balance / 100:.2f}")  # Format balance
-            
-    
-        
-    
-        
-    
-     
-    
-        
