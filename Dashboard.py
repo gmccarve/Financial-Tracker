@@ -257,7 +257,6 @@ class DataManager:
         if dashboard.table_to_display == 'Banking':
             # Assign account name and type
             df['Account'] = account_name
-            df['Category'] = ''
             
             # Categorize the account based on Payment, Deposit, and Balance values
             if (
@@ -485,7 +484,6 @@ class TransactionManager:
             elif dashboard.table_to_display == 'Investments':
                 df_to_update = dashboard.all_investment_data
 
-
             if prefill_data:
                 # Editing an existing transaction
                 selected_items = dashboard_actions.widget_dashboard.tree.selection()
@@ -504,18 +502,15 @@ class TransactionManager:
                 # Assign the 'No.' explicitly
                 new_df.at[0, 'No.'] = selected_number
 
+                print (new_df)
+
                 # Update row values directly
                 for col in new_df.columns:
                     if col in df_to_update.columns:
-                        # Preserve existing Category if new value is empty
-                        if col == "Category" and not new_df.at[0, col].strip():
-                            continue
-                        # Explicitly handle Date to ensure type compatibility
-                        elif col == "Date":
+                        if col == "Date":
                             df_to_update.at[index_to_update, col] = pd.to_datetime(new_df.at[0, col])
                         else:
                             df_to_update.at[index_to_update, col] = new_df.at[0, col]
-
 
             else:
                 # Adding new transaction
@@ -627,73 +622,37 @@ class TransactionManager:
 
                 calendar_button = tk.Button(frame, text="📅", command=lambda e=entry_fields[column]: pickDate(e))
                 calendar_button.pack(side=tk.RIGHT)
+
             # =======================================
             #  Text / Numeric Editing Columns
             # =======================================
-            if column in ["Payment", "Deposit", "Balance", "Note", "Symbol"]:
-                """
-                x, y, width, height = self.widget_dashboard.tree.bbox(item, column)
-                
-                # Create an Entry widget over the cell
-                entry_widget = tk.Entry(self.widget_dashboard.tree)
-                entry_widget.place(x=x, y=y, width=width, height=height)
-                
-                # Populate the Entry with current cell value
-                entry_widget.insert(0, current_value)
-                entry_widget.select_range(0, tk.END)
-                entry_widget.focus_set()
-        
-                # Bind keys to handle user acceptance or cancellation
-                entry_widget.bind("<Return>", lambda e: saveEdit(entry_widget.get()))
-                entry_widget.bind("<Tab>", lambda e: saveEdit(entry_widget.get()))
-                entry_widget.bind("<FocusOut>", cancelEdit)
-                """
-                column
+            if column in ["Payment", "Deposit", "Balance", "Note", "Symbol", "Description", "Units"]:
+                entry = tk.Entry(frame)
+                entry.insert(0, current_value)
+                entry.pack(fill='x', expand=True)
+                entry_fields[column] = entry
         
             # =======================================
             #  Dropdown Columns
             # =======================================
             elif column in ["Category", "Account", "Payee", "Action", "Asset"]:
-                """
-                x, y, width, height = self.widget_dashboard.tree.bbox(item, column)
-                
-                # Create a readonly Combobox over the cell
-                dropdown = ttk.Combobox(self.widget_dashboard.tree, state="readonly")
-                dropdown.place(x=x, y=y, width=width, height=height)
-        
-                # Provide the dropdown values
-                if col_name == "Category":
-                    dropdown["values"] = self.main_dashboard.categories
-                elif col_name == "Payee":
-                    dropdown["values"] = self.main_dashboard.payees
-                elif col_name == "Account":
-                    accounts = self.getBankingAccounts()
-                    dropdown["values"] = accounts
-                elif col_name == "Asset":
-                    dropdown["values"] = self.main_dashboard.assets
-                elif col_name == 'Action':
-                    dropdown["values"] = self.main_dashboard.actions
-        
-                dropdown.set(current_value)
-                
-                # When user picks an item from the dropdown, call saveEdit
-                dropdown.bind("<<ComboboxSelected>>", lambda e: saveEdit(dropdown.get()))
-                dropdown.focus_set()
-                
-                # If user moves focus away, cancel editing
-                dropdown.bind("<FocusOut>", cancelEdit)
-                """
-                column
+                entry = ttk.Combobox(frame, state="readonly")
 
+                if column == "Category":
+                    entry["values"] = dashboard.categories
+                elif column == "Payee":
+                    entry["values"] = dashboard.payees
+                elif column == "Account":
+                    entry["values"] = dashboard.all_banking_data["Account"].unique().tolist()
+                elif column == "Asset":
+                    entry["values"] = dashboard.assets
+                elif column == 'Action':
+                    entry["values"] = dashboard.actions
 
+                entry.set(current_value)
+                entry.pack(fill='x', expand=True)
     
-            #entry = tk.Entry(transaction_window)
-            #entry.grid(row=idx, column=1, padx=10, pady=5, sticky="ew")
-    
-            #if prefill_data and column in prefill_data:
-            #    entry.insert(0, prefill_data[column])
-    
-            #entry_fields[column] = entry
+            entry_fields[column] = entry
             
         window_width, window_height = 300, (30*(idx+1))+60
         Windows.openRelativeWindow(transaction_window, main_width=dashboard.winfo_x(), main_height=dashboard.winfo_y(), width=window_width, height=window_height)
@@ -758,7 +717,6 @@ class TransactionManager:
             # Update the displayed table immediately
             dashboard_actions.updateTable(dashboard.all_investment_data)
 
-  
 class DashboardUI(tk.Frame):
     def __init__(self, parent_dashboard, master=None, *args, **kwargs):
         """
@@ -1135,7 +1093,6 @@ class DashboardActions:
         TransactionManager.deleteTransaction(self, self.main_dashboard) 
 
     def openData(self) -> None:
-        #TODO Separate for banking v. investments
         """
         Opens one or more data files and merges the results into the main Dashboard's DataFrame.
     
@@ -1456,7 +1413,6 @@ class DashboardActions:
         None
             Updates the UI in-place.
         """
-
         
         if self.main_dashboard.table_to_display == 'Banking':
             allX = ['All Accounts', 'All Categories', 'All Payees', 'Reports']
@@ -1505,8 +1461,10 @@ class DashboardActions:
                 # Update investement actions
                 elif idx == 2:
                     self.toggleButtonStates(False)
+                    self.getInvestmentActions()
                     self.widget_dashboard.sidebar_labels[idx].config(text="Actions")
-                    
+                    for action in self.main_dashboard.actions:
+                        listbox.insert(tk.END, action)
                 # Update reports
                 elif idx == 3:
                     self.widget_dashboard.sidebar_labels[idx].config(text="Reports")
@@ -1848,6 +1806,8 @@ class DashboardActions:
 
             else:
                 self.main_dashboard.current_account_balances[account] = 0.00
+
+        self.updateSideBar(self.main_dashboard.all_banking_data)
         
     def calculateBalancesPerType(self, df: pd.DataFrame, account: str, given_date: str, given_balance: float) -> pd.DataFrame:
         """
