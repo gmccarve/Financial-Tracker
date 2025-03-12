@@ -942,6 +942,9 @@ class DashboardActions:
         self.main_dashboard = main_dashboard
         self.widget_dashboard = widget_dashboard
 
+    ########################################################
+    # Modify Entries
+    ########################################################
     def addEntry(self) -> None:
         """
         Opens a transaction window in 'add' mode.
@@ -976,6 +979,9 @@ class DashboardActions:
         # for deleting whichever transaction(s) the user has selected in the UI.
         TransactionManager.deleteTransaction(self, self.main_dashboard) 
 
+    ########################################################
+    # Data Manipulation
+    ########################################################
     def openData(self) -> None:
         """
         Opens one or more data files and merges the results into the main Dashboard's DataFrame.
@@ -1178,7 +1184,10 @@ class DashboardActions:
         self.getAssets()
         self.getInvestmentActions()
         self.getPayees()
-    
+ 
+    ########################################################
+    # Table Widget Manipulation
+    ########################################################   
     def updateTable(self, df:pd.DataFrame) -> None:
         """
         Clears and repopulates the Treeview widget with rows from the provided DataFrame.
@@ -1290,76 +1299,6 @@ class DashboardActions:
             [StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2]
         )
             
-    def updateSideBar(self, df: pd.DataFrame) -> None:
-        """
-        Updates the sidebar objects.
-    
-        Parameters
-        ----------
-        df : pd.DataFrame
-            A DataFrame representing transaction data (not directly used in this function).
-        
-        Returns
-        -------
-        None
-            Updates the UI in-place.
-        """
-        
-        if self.main_dashboard.table_to_display == 'Banking':
-            allX = ['All Accounts', 'All Categories', 'All Payees', 'Reports']
-        elif self.main_dashboard.table_to_display == 'Investments':
-            allX = ['All Accounts', 'All Assets', 'All Actions', 'Reports']
-
-        for idx, listbox in enumerate(self.widget_dashboard.sidebar_listboxes):
-            listbox.delete(0, tk.END)   # Clear previous entries
-            listbox.insert(tk.END, allX[idx])
-
-            # Update based on banking dataframe
-            if self.main_dashboard.table_to_display == 'Banking':
-                # Update all accounts and balances
-                if idx == 0:
-                    self.widget_dashboard.sidebar_labels[idx].config(text="Accounts")
-                    for account, balance in self.main_dashboard.current_account_balances.items():    
-                        listbox.insert(tk.END, f"{account} ${balance / 100:.2f}")
-                # Update all banking categories
-                elif idx == 1:
-                    self.getCategories()
-                    self.widget_dashboard.sidebar_labels[idx].config(text="Categories")
-                    for category in self.main_dashboard.categories:
-                        listbox.insert(tk.END, category)
-                # Update all payees
-                elif idx == 2:
-                    self.toggleButtonStates(True)
-                    self.widget_dashboard.sidebar_labels[idx].config(text="Payees")
-                    self.getPayees()
-                    for payee in self.main_dashboard.payees:
-                        listbox.insert(tk.END, payee)
-                # Update reports
-                elif idx == 3:
-                    self.widget_dashboard.sidebar_labels[idx].config(text="Reports")
-            
-            # Update based on investment dataframe
-            elif self.main_dashboard.table_to_display == 'Investments':
-                # Update all accounts and balances
-                if idx == 0:
-                    self.widget_dashboard.sidebar_labels[idx].config(text="Accounts")
-                # Update investment assets
-                elif idx == 1:
-                    self.getAssets()
-                    self.widget_dashboard.sidebar_labels[idx].config(text="Assets")
-                    for category in self.main_dashboard.assets:
-                        listbox.insert(tk.END, category)
-                # Update investement actions
-                elif idx == 2:
-                    self.toggleButtonStates(False)
-                    self.getInvestmentActions()
-                    self.widget_dashboard.sidebar_labels[idx].config(text="Actions")
-                    for action in self.main_dashboard.actions:
-                        listbox.insert(tk.END, action)
-                # Update reports
-                elif idx == 3:
-                    self.widget_dashboard.sidebar_labels[idx].config(text="Reports")
-
     def toggleButtonStates(self, show: bool) -> None:
         """
         Toggles visibility of the Payee listbox and its label.
@@ -1375,7 +1314,7 @@ class DashboardActions:
             self.widget_dashboard.buttons[4].config(state=tk.DISABLED)
             self.widget_dashboard.buttons[5].config(state=tk.DISABLED)
             self.widget_dashboard.buttons[7].config(state=tk.NORMAL)
-
+    
     def filterEntries(self, event=None, case=None) -> None:
         """
         Filters Tableview entries.
@@ -1432,7 +1371,7 @@ class DashboardActions:
                 ].copy()
     
         self.updateTable(filtered_df)
-
+    
     def switchAccountView(self, account_type: str) -> None:
         """
         Filters the data displayed based on a specified account type (e.g., "Banking" or "Investments").
@@ -1453,7 +1392,7 @@ class DashboardActions:
 
         self.main_dashboard.table_to_display = account_type
         self.updateTable(new_df)
-
+    
     def trackBankBalances(self) -> None:
         """
         Opens a Toplevel window to manually review and update the latest balance for each banking account.
@@ -1792,7 +1731,385 @@ class DashboardActions:
         df.update(account_df)
     
         return df, last_balance
+    
+    def editCell(self, event: tk.Event | None = None) -> None:
+        """
+        Handles in-place editing of a cell in the Treeview based on its column type.
+    
+        This function:
+        1. Identifies which row and column were clicked.
+        2. If it's a date column, opens a calendar dialog for date selection.
+        3. If it's a numeric or text column, replaces the cell with an Entry widget.
+        4. If it's a dropdown column (Category/Account), shows a readonly Combobox.
+        5. Validates or formats the entered text (e.g. removing $ from Payment columns),
+           then updates the underlying DataFrame and refreshes the UI.
+    
+        Parameters
+        ----------
+        event : tk.Event | None, optional
+            A Tkinter event object that provides the x,y location of the click, 
+            or None if called manually. Defaults to None.
+    
+        Returns
+        -------
+        None
+            The Treeview cell is replaced with an appropriate editing widget, 
+            and on confirm, the underlying DataFrame is updated in-place.
+        """
         
+        def saveEdit(new_value: str) -> None:
+            """
+            Saves the new value into the DataFrame and updates the UI.
+    
+            Parameters
+            ----------
+            new_value : str
+                The text or date selected by the user.
+            """
+            # Retrieve the 'No.' from the row's values, which identifies the record in the DataFrame
+            selected_number = int(self.widget_dashboard.tree.item(item, "values")[0])
+            if self.main_dashboard.table_to_display == 'Banking':
+                df_to_update = self.main_dashboard.all_banking_data
+            elif self.main_dashboard.table_to_display == 'Investments':
+                df_to_update = self.main_dashboard.all_investment_data
+
+            index_to_update = df_to_update[df_to_update["No."] == selected_number].index
+
+            if not index_to_update.empty:
+                # Handle numeric columns (Payment, Deposit, Balance)
+                if col_name in ["Payment", "Deposit", "Balance"]:
+                    try:
+                        new_value_converted  = float(new_value.replace("$", "").replace(",", "")) * 100
+                    except ValueError:
+                        messagebox.showerror("Invalid Input", "Please enter a valid number.")
+                        return
+                    
+                elif col_name in ["Units"]:
+                    try:
+                        new_value_converted  = float(new_value)
+                    except ValueError:
+                        messagebox.showerror("Invalid Input", "Please enter a valid number.")
+                        return
+    
+                # Handle date column - store as standardized YYYY-MM-DD string
+                elif col_name == "Date":
+                    new_value_converted  = Utility.formatDateFromString(new_value)
+                else:
+                    new_value_converted = new_value
+                    
+                # Update the DataFrame in-place
+                df_to_update.at[index_to_update[0], col_name] = new_value_converted
+    
+                # Now update the corresponding cell in the Treeview without reloading the entire table
+                current_values = list(self.widget_dashboard.tree.item(item, "values"))
+                if col_name in ["Payment", "Deposit", "Balance"]:
+                    display_value = f"${new_value_converted / 100:.2f}"
+                elif col_name == "Date":
+                    display_value = new_value_converted  # Already in YYYY-MM-DD format
+                else:
+                    display_value = new_value
+                current_values[col_index] = display_value
+                self.widget_dashboard.tree.item(item, values=current_values)
+    
+            cancelEdit()
+
+        def cancelEdit(event: tk.Event | None = None) -> None:
+            """
+            Cancels editing by closing any open widget without saving changes.
+            
+            Parameters
+            ----------
+            event : tk.Event | None, optional
+                Optional event object if the user triggered cancellation via a key 
+                (Escape) or focus loss. Defaults to None.
+            """
+            if "entry_widget" in locals():
+                entry_widget.destroy()
+            if "cal_win" in locals():
+                cal_win.destroy()
+            if "dropdown" in locals():
+                dropdown.destroy()
+        
+        # Identify which item (row) and column user clicked
+        item = self.widget_dashboard.tree.identify_row(event.y)     # e.g. "I001"
+        column = self.widget_dashboard.tree.identify_column(event.x)  # e.g. "#1"
+        
+        # If nothing was clicked or invalid, exit
+        if not item or not column:
+            return
+    
+        # Convert the "#1" style column ID to a zero-based index
+        col_index = int(column[1:]) - 1
+        # Get the column name from the Treeview columns list
+        col_name = self.widget_dashboard.tree["columns"][col_index]
+    
+        # Get the current cell value
+        current_value = self.widget_dashboard.tree.item(item, "values")[col_index]
+    
+        # Skip editing the 'No.' column (unique ID)
+        if col_name == "No.":
+            return 
+    
+        # =======================================
+        #  Date Column Editing
+        # =======================================
+        if col_name == "Date":
+            try:
+                initial_date = datetime.strptime(current_value, "%Y-%m-%d").date()
+            except ValueError:
+                # If current_value is not a valid date, default to today
+                initial_date = date.today()
+    
+            # Create a Toplevel window with a calendar
+            cal_win = tk.Toplevel(self.main_dashboard)
+            cal_win.title("Select Date")
+            cal_win.geometry("250x250")
+    
+            cal = Calendar(
+                cal_win,
+                selectmode="day",
+                year=initial_date.year,
+                month=initial_date.month,
+                day=initial_date.day,
+                date_pattern='yyyy-mm-dd'
+            )
+            cal.pack(padx=10, pady=10)
+    
+            def pickDate(event: tk.Event | None = None) -> None:
+                """
+                Retrieves the selected date from the calendar and invokes saveEdit.
+                
+                Parameters
+                ----------
+                event : tk.Event | None, optional
+                    If the user pressed Enter, or triggered the selection by a button click,
+                    the event is passed. Defaults to None.
+                """
+                new_date = cal.get_date()
+                saveEdit(new_date)
+    
+            # Buttons for confirming or canceling date selection
+            tk.Button(cal_win, text="OK", command=pickDate).pack(pady=5, padx=5)
+            tk.Button(cal_win, text="Cancel", command=cancelEdit).pack(pady=5, padx=5)
+    
+            # Key bindings for date selection
+            cal_win.bind("<Return>", pickDate)
+            cal_win.bind("<Escape>", cancelEdit)
+            cal_win.focus_force()  # Bring this Toplevel to the front
+    
+        # =======================================
+        #  Text / Numeric Editing Columns
+        # =======================================
+        if col_name in ["Payment", "Deposit", "Balance", "Note", "Symbol"]:
+            x, y, width, height = self.widget_dashboard.tree.bbox(item, column)
+            
+            # Create an Entry widget over the cell
+            entry_widget = tk.Entry(self.widget_dashboard.tree)
+            entry_widget.place(x=x, y=y, width=width, height=height)
+            
+            # Populate the Entry with current cell value
+            entry_widget.insert(0, current_value)
+            entry_widget.select_range(0, tk.END)
+            entry_widget.focus_set()
+    
+            # Bind keys to handle user acceptance or cancellation
+            entry_widget.bind("<Return>", lambda e: saveEdit(entry_widget.get()))
+            entry_widget.bind("<Tab>", lambda e: saveEdit(entry_widget.get()))
+            entry_widget.bind("<FocusOut>", cancelEdit)
+    
+        # =======================================
+        #  Dropdown Columns
+        # =======================================
+        elif col_name in ["Category", "Account", "Payee", "Action", "Asset"]:
+            x, y, width, height = self.widget_dashboard.tree.bbox(item, column)
+            
+            # Create a readonly Combobox over the cell
+            dropdown = ttk.Combobox(self.widget_dashboard.tree, state="readonly")
+            dropdown.place(x=x, y=y, width=width, height=height)
+    
+            # Provide the dropdown values
+            if col_name == "Category":
+                dropdown["values"] = self.main_dashboard.categories
+            elif col_name == "Payee":
+                dropdown["values"] = self.main_dashboard.payees
+            elif col_name == "Account":
+                accounts = self.getBankingAccounts()
+                dropdown["values"] = accounts
+            elif col_name == "Asset":
+                dropdown["values"] = self.main_dashboard.assets
+            elif col_name == 'Action':
+                dropdown["values"] = self.main_dashboard.actions
+    
+            dropdown.set(current_value)
+            
+            # When user picks an item from the dropdown, call saveEdit
+            dropdown.bind("<<ComboboxSelected>>", lambda e: saveEdit(dropdown.get()))
+            dropdown.focus_set()
+            
+            # If user moves focus away, cancel editing
+            dropdown.bind("<FocusOut>", cancelEdit)
+    
+    def selectAllRows(self) -> None:
+        """
+        Selects all rows in the transaction table (Treeview).
+    
+        This method:
+        1. Retrieves all item IDs from the Treeview via get_children().
+        2. Calls selection_set(...) on those items, marking each row as selected.
+        """
+        self.widget_dashboard.tree.selection_set(
+            self.widget_dashboard.tree.get_children()
+        )
+            
+    def clearTable(self, event: tk.Event | None = None) -> None:
+        """
+        Prompts the user for confirmation and, if accepted, clears all transactions.
+    
+        This method:
+        1. Checks if main_dashboard.all_banking_data has entries.
+        2. Asks the user to confirm deletion of all transactions.
+        3. If confirmed, resets main_dashboard.all_banking_data to an empty DataFrame,
+           and removes all items from the accounts list, investments list, 
+           and the Treeview.
+    
+        Parameters
+        ----------
+        event : tk.Event | None, optional
+            A Tkinter event object, typically passed when bound to a GUI event.
+            Defaults to None.
+    
+        Returns
+        -------
+        None
+            Modifies the application's data and UI elements in-place.
+        """
+        if not self.main_dashboard.all_banking_data.empty:
+            confirm = messagebox.askyesno(
+                "Confirm Delete",
+                "Are you sure you want to delete all transaction(s)?"
+            )
+            
+            if confirm is None or not confirm:  # User canceled or closed dialog
+                return
+            
+            # If confirmed, clear everything
+            self.main_dashboard.all_banking_data = pd.DataFrame()
+            self.main_dashboard.all_investment_data = pd.DataFrame()
+            self.main_dashboard.table_to_display = 'Banking' # Or Investments
+            self.main_dashboard.initial_account_balances = pd.DataFrame(columns=['Account', 'Initial Date', 'Initial Value'])
+
+            self.main_dashboard.current_account_balances = {}
+            self.main_dashboard.account_cases = {}
+
+            self.widget_dashboard.tree.delete(*self.widget_dashboard.tree.get_children())
+
+            for listbox in self.widget_dashboard.sidebar_listboxes:
+                listbox.delete(0, tk.END)
+
+    def smoothScroll(self, event=None) -> None:
+        """
+        Adjusts vertical scrolling speed for a Tkinter Listbox widget during mouse wheel events.
+    
+        This function:
+        1. Verifies the widget receiving the event is a Listbox.
+        2. Retrieves the user-configured scroll speed from StyleConfig.SCROLL_SPEED.
+        3. Calls the Listbox's yview_scroll method with a speed-dependent delta,
+           allowing for custom "smooth" or accelerated scrolling behavior.
+    
+        Parameters
+        ----------
+        event : tk.Event | None, optional
+            The Tkinter event object triggered by the mouse wheel.
+            If None, the function does nothing.
+    
+        Returns
+        -------
+        None
+            Modifies the Listbox's scroll position in-place.
+        """
+        widget = event.widget
+        if isinstance(widget, tk.Listbox):
+            speed = StyleConfig.SCROLL_SPEED
+            # event.delta > 0 means the wheel was scrolled 'up', 
+            # so we negate the speed to scroll 'up' in the list.
+            widget.yview_scroll(-speed if event.delta > 0 else speed, "units")
+
+    ########################################################
+    # Sidebar Manipulation
+    ########################################################
+    def updateSideBar(self, df: pd.DataFrame) -> None:
+        """
+        Updates the sidebar objects.
+    
+        Parameters
+        ----------
+        df : pd.DataFrame
+            A DataFrame representing transaction data (not directly used in this function).
+        
+        Returns
+        -------
+        None
+            Updates the UI in-place.
+        """
+        
+        if self.main_dashboard.table_to_display == 'Banking':
+            allX = ['All Accounts', 'All Categories', 'All Payees', 'Reports']
+        elif self.main_dashboard.table_to_display == 'Investments':
+            allX = ['All Accounts', 'All Assets', 'All Actions', 'Reports']
+
+        for idx, listbox in enumerate(self.widget_dashboard.sidebar_listboxes):
+            listbox.delete(0, tk.END)   # Clear previous entries
+            listbox.insert(tk.END, allX[idx])
+
+            # Update based on banking dataframe
+            if self.main_dashboard.table_to_display == 'Banking':
+                # Update all accounts and balances
+                if idx == 0:
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Accounts")
+                    for account, balance in self.main_dashboard.current_account_balances.items():    
+                        listbox.insert(tk.END, f"{account} ${balance / 100:.2f}")
+                # Update all banking categories
+                elif idx == 1:
+                    self.getCategories()
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Categories")
+                    for category in self.main_dashboard.categories:
+                        listbox.insert(tk.END, category)
+                # Update all payees
+                elif idx == 2:
+                    self.toggleButtonStates(True)
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Payees")
+                    self.getPayees()
+                    for payee in self.main_dashboard.payees:
+                        listbox.insert(tk.END, payee)
+                # Update reports
+                elif idx == 3:
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Reports")
+            
+            # Update based on investment dataframe
+            elif self.main_dashboard.table_to_display == 'Investments':
+                # Update all accounts and balances
+                if idx == 0:
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Accounts")
+                # Update investment assets
+                elif idx == 1:
+                    self.getAssets()
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Assets")
+                    for category in self.main_dashboard.assets:
+                        listbox.insert(tk.END, category)
+                # Update investement actions
+                elif idx == 2:
+                    self.toggleButtonStates(False)
+                    self.getInvestmentActions()
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Actions")
+                    for action in self.main_dashboard.actions:
+                        listbox.insert(tk.END, action)
+                # Update reports
+                elif idx == 3:
+                    self.widget_dashboard.sidebar_labels[idx].config(text="Reports")
+
+    ########################################################
+    # Get lists of items (actions/categories/payees/assets/accounts)
+    ########################################################  
     def getPayees(self)-> None:
         """
         Loads payees from a text file and merges them with any existing
@@ -1897,6 +2214,202 @@ class DashboardActions:
                 self.main_dashboard.banking_accounts.append(account)
         self.main_dashboard.banking_accounts = sorted(self.main_dashboard.banking_accounts)
 
+    def manageItems(self, item_type):
+        """General function to manage (add, modify, delete) items such as categories or accounts."""
+
+        def loadItems():
+            # Clear and repopulate the listbox
+            listbox.delete(0, tk.END)
+            for item in sorted(item_list, key=str.lower):
+                listbox.insert(tk.END, item)
+
+        def addItem():
+            new_item = simpledialog.askstring(f"Add {item_type}", f"Enter new {item_type}:")
+            if new_item and new_item not in item_list:
+                item_list.append(new_item)
+                listbox.insert(tk.END, new_item)
+            saveItems()
+
+        def modifyItem():
+            selected_index = listbox.curselection()
+            if selected_index:
+                old_item = listbox.get(selected_index)
+                new_item = simpledialog.askstring("Modify Item", "Enter new name:", initialvalue=old_item)
+                if new_item and new_item not in item_list:
+                    selected_value = listbox.get(selected_index)
+                    item_list.remove(selected_value)
+                    item_list.append(new_item)
+                    listbox.delete(selected_index)
+                    listbox.insert(selected_index, new_item)
+                saveItems()
+
+        def deleteItem():
+            selected_index = listbox.curselection()
+            if selected_index:
+                confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this item?")
+                if confirm:
+                    selected_value = listbox.get(selected_index)
+                    if selected_value in item_list:
+                        item_list.remove(selected_value)
+                    listbox.delete(selected_index)
+                    saveItems()
+                self.manageItems(item_type)
+
+        def saveItems():
+            # Call functions to populate the listbox
+            if item_type == 'Categories':
+                file = self.main_dashboard.banking_categories_file
+
+                with open(file, "w") as f:
+                    for item in item_list:
+                        f.write(item + "\n")
+
+                self.getCategories()
+
+            elif item_type == 'Assets':
+                file = self.main_dashboard.investment_assets_file
+
+                with open(file, "w") as f:
+                    for item in item_list:
+                        f.write(item + "\n")
+
+                self.getAssets()
+
+            if item_type == 'Payees':
+                file = self.main_dashboard.payee_file
+
+                with open(file, "w") as f:
+                    for item in item_list:
+                        f.write(item + "\n")
+
+                self.getPayees()
+
+            if item_type == 'Actions':
+                file = self.main_dashboard.investment_actions_file
+
+                with open(file, "w") as f:
+                    for item in item_list:
+                        f.write(item + "\n")
+
+                self.getInvestmentActions()
+
+            if item_type == 'Banking Accounts':
+                self.main_dashboard.banking_accounts = sorted(item_list, key=str.lower)
+                
+                self.getBankingAccounts()
+
+            if item_type == 'Investment Accounts':
+                self.main_dashboard.investment_accounts = sorted(item_list, key=str.lower)
+                
+                self.getInvestmentAccounts()
+
+        def closeWindow(event=None):
+            manage_window.destroy()
+
+        # Create a Toplevel window anchored relative to the main dashboard
+        manage_window = tk.Toplevel(self.main_dashboard)
+        manage_window.title("Manage Items")
+        
+        # Set window dimensions and position
+        window_height, window_width = 400, 300
+        Windows.openRelativeWindow(
+            manage_window, 
+            main_width=self.main_dashboard.winfo_x(),
+            main_height=self.main_dashboard.winfo_y(),
+            width=window_width, 
+            height=window_height
+        )
+        
+        # Title label
+
+        if item_type == 'Categories' and self.main_dashboard.table_to_display == 'Investments':
+            item_type = 'Assets'
+
+        ttk.Label(
+            manage_window, 
+            text=item_type,
+            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")
+        ).pack(pady=5)
+
+        # Frame for the Listbox and scrollbar
+        frame = tk.Frame(manage_window, bg=StyleConfig.BG_COLOR)
+        frame.pack(fill="both", expand=True, padx=10, pady=5)
+    
+        # Create a Listbox to display existing values
+        listbox = tk.Listbox(frame, height=15, bg=StyleConfig.BG_COLOR)
+        listbox.pack(side=tk.LEFT, fill="both", expand=True)
+    
+        # Attach a vertical scrollbar to the listbox
+        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill="y")
+        listbox.config(yscrollcommand=scrollbar.set)
+
+        # Frame to hold the Add / Modify / Delete / Exit buttons
+        button_frame = tk.Frame(manage_window, bg=StyleConfig.BG_COLOR)
+        button_frame.pack(pady=10)
+
+        # Button styling from StyleConfig
+        button_attributes = {
+            "bg": StyleConfig.BUTTON_COLOR,
+            "fg": StyleConfig.TEXT_COLOR,
+            "font": (StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE),
+            "relief": StyleConfig.BUTTON_STYLE,
+            "padx": StyleConfig.BUTTON_PADDING,
+            "pady": StyleConfig.BUTTON_PADDING,
+            "width": 10  # Ensure a consistent width for each button
+        }
+
+        # Create the buttons
+        add_button = tk.Button(button_frame, text="Add", command=addItem, **button_attributes)
+        modify_button = tk.Button(button_frame, text="Modify", command=modifyItem, **button_attributes)
+        delete_button = tk.Button(button_frame, text="Delete", command=deleteItem, **button_attributes)
+        exit_button = tk.Button(button_frame, text="Exit", command=closeWindow, **button_attributes)
+    
+        # Lay out buttons: Add, Modify, Delete in the first row, Exit in the second row
+        add_button.grid(row=0, column=0, padx=5, pady=5)
+        modify_button.grid(row=0, column=1, padx=5, pady=5)
+        delete_button.grid(row=0, column=2, padx=5, pady=5)
+        exit_button.grid(row=1, column=0, columnspan=3, padx=5, pady=5)
+
+        # Call functions to populate the listbox
+        if item_type == 'Categories':
+            self.getCategories()
+            item_list = self.main_dashboard.categories
+            
+        elif item_type == 'Assets':
+            self.getAssets()
+            item_list = self.main_dashboard.assets
+
+        elif item_type == 'Payees':
+            self.getPayees()
+            item_list = self.main_dashboard.payees
+
+        elif item_type == 'Actions':
+            self.getInvestmentActions()
+            item_list = self.main_dashboard.actions
+
+        elif item_type == 'Banking Accounts':
+            self.getBankingAccounts()
+            item_list = self.main_dashboard.banking_accounts
+
+        elif item_type == 'Investment Accounts':
+            self.getInvestmentAccounts()
+            item_list = self.main_dashboard.investment_accounts
+
+        item_list = sorted(item_list)
+
+        # Populate the listbox
+        loadItems()
+
+        # Bind Escape key to close the window, and give focus to it
+        manage_window.bind("<Escape>", lambda event: closeWindow())
+        manage_window.bind("<Return>", lambda event: closeWindow())
+        manage_window.bind("<Delete>", lambda event: deleteItem())
+        manage_window.focus_force()
+
+    ########################################################
+    # Options Window
+    ########################################################
     def viewOptions(self, new_settings: bool = True) -> None:
         """
         Opens a window to adjust various application settings such as fonts, colors, sizes, etc.
@@ -2147,417 +2660,10 @@ class DashboardActions:
         options_window.bind("<Escape>", closeWindow)
     
         options_window.focus_force()
-    
-    def editCell(self, event: tk.Event | None = None) -> None:
-        """
-        Handles in-place editing of a cell in the Treeview based on its column type.
-    
-        This function:
-        1. Identifies which row and column were clicked.
-        2. If it's a date column, opens a calendar dialog for date selection.
-        3. If it's a numeric or text column, replaces the cell with an Entry widget.
-        4. If it's a dropdown column (Category/Account), shows a readonly Combobox.
-        5. Validates or formats the entered text (e.g. removing $ from Payment columns),
-           then updates the underlying DataFrame and refreshes the UI.
-    
-        Parameters
-        ----------
-        event : tk.Event | None, optional
-            A Tkinter event object that provides the x,y location of the click, 
-            or None if called manually. Defaults to None.
-    
-        Returns
-        -------
-        None
-            The Treeview cell is replaced with an appropriate editing widget, 
-            and on confirm, the underlying DataFrame is updated in-place.
-        """
-        
-        def saveEdit(new_value: str) -> None:
-            """
-            Saves the new value into the DataFrame and updates the UI.
-    
-            Parameters
-            ----------
-            new_value : str
-                The text or date selected by the user.
-            """
-            # Retrieve the 'No.' from the row's values, which identifies the record in the DataFrame
-            selected_number = int(self.widget_dashboard.tree.item(item, "values")[0])
-            if self.main_dashboard.table_to_display == 'Banking':
-                df_to_update = self.main_dashboard.all_banking_data
-            elif self.main_dashboard.table_to_display == 'Investments':
-                df_to_update = self.main_dashboard.all_investment_data
 
-            index_to_update = df_to_update[df_to_update["No."] == selected_number].index
-
-            if not index_to_update.empty:
-                # Handle numeric columns (Payment, Deposit, Balance)
-                if col_name in ["Payment", "Deposit", "Balance"]:
-                    try:
-                        new_value_converted  = float(new_value.replace("$", "").replace(",", "")) * 100
-                    except ValueError:
-                        messagebox.showerror("Invalid Input", "Please enter a valid number.")
-                        return
-                    
-                elif col_name in ["Units"]:
-                    try:
-                        new_value_converted  = float(new_value)
-                    except ValueError:
-                        messagebox.showerror("Invalid Input", "Please enter a valid number.")
-                        return
-    
-                # Handle date column - store as standardized YYYY-MM-DD string
-                elif col_name == "Date":
-                    new_value_converted  = Utility.formatDateFromString(new_value)
-                else:
-                    new_value_converted = new_value
-                    
-                # Update the DataFrame in-place
-                df_to_update.at[index_to_update[0], col_name] = new_value_converted
-    
-                # Now update the corresponding cell in the Treeview without reloading the entire table
-                current_values = list(self.widget_dashboard.tree.item(item, "values"))
-                if col_name in ["Payment", "Deposit", "Balance"]:
-                    display_value = f"${new_value_converted / 100:.2f}"
-                elif col_name == "Date":
-                    display_value = new_value_converted  # Already in YYYY-MM-DD format
-                else:
-                    display_value = new_value
-                current_values[col_index] = display_value
-                self.widget_dashboard.tree.item(item, values=current_values)
-    
-            cancelEdit()
-
-        def cancelEdit(event: tk.Event | None = None) -> None:
-            """
-            Cancels editing by closing any open widget without saving changes.
-            
-            Parameters
-            ----------
-            event : tk.Event | None, optional
-                Optional event object if the user triggered cancellation via a key 
-                (Escape) or focus loss. Defaults to None.
-            """
-            if "entry_widget" in locals():
-                entry_widget.destroy()
-            if "cal_win" in locals():
-                cal_win.destroy()
-            if "dropdown" in locals():
-                dropdown.destroy()
-        
-        # Identify which item (row) and column user clicked
-        item = self.widget_dashboard.tree.identify_row(event.y)     # e.g. "I001"
-        column = self.widget_dashboard.tree.identify_column(event.x)  # e.g. "#1"
-        
-        # If nothing was clicked or invalid, exit
-        if not item or not column:
-            return
-    
-        # Convert the "#1" style column ID to a zero-based index
-        col_index = int(column[1:]) - 1
-        # Get the column name from the Treeview columns list
-        col_name = self.widget_dashboard.tree["columns"][col_index]
-    
-        # Get the current cell value
-        current_value = self.widget_dashboard.tree.item(item, "values")[col_index]
-    
-        # Skip editing the 'No.' column (unique ID)
-        if col_name == "No.":
-            return 
-    
-        # =======================================
-        #  Date Column Editing
-        # =======================================
-        if col_name == "Date":
-            try:
-                initial_date = datetime.strptime(current_value, "%Y-%m-%d").date()
-            except ValueError:
-                # If current_value is not a valid date, default to today
-                initial_date = date.today()
-    
-            # Create a Toplevel window with a calendar
-            cal_win = tk.Toplevel(self.main_dashboard)
-            cal_win.title("Select Date")
-            cal_win.geometry("250x250")
-    
-            cal = Calendar(
-                cal_win,
-                selectmode="day",
-                year=initial_date.year,
-                month=initial_date.month,
-                day=initial_date.day,
-                date_pattern='yyyy-mm-dd'
-            )
-            cal.pack(padx=10, pady=10)
-    
-            def pickDate(event: tk.Event | None = None) -> None:
-                """
-                Retrieves the selected date from the calendar and invokes saveEdit.
-                
-                Parameters
-                ----------
-                event : tk.Event | None, optional
-                    If the user pressed Enter, or triggered the selection by a button click,
-                    the event is passed. Defaults to None.
-                """
-                new_date = cal.get_date()
-                saveEdit(new_date)
-    
-            # Buttons for confirming or canceling date selection
-            tk.Button(cal_win, text="OK", command=pickDate).pack(pady=5, padx=5)
-            tk.Button(cal_win, text="Cancel", command=cancelEdit).pack(pady=5, padx=5)
-    
-            # Key bindings for date selection
-            cal_win.bind("<Return>", pickDate)
-            cal_win.bind("<Escape>", cancelEdit)
-            cal_win.focus_force()  # Bring this Toplevel to the front
-    
-        # =======================================
-        #  Text / Numeric Editing Columns
-        # =======================================
-        if col_name in ["Payment", "Deposit", "Balance", "Note", "Symbol"]:
-            x, y, width, height = self.widget_dashboard.tree.bbox(item, column)
-            
-            # Create an Entry widget over the cell
-            entry_widget = tk.Entry(self.widget_dashboard.tree)
-            entry_widget.place(x=x, y=y, width=width, height=height)
-            
-            # Populate the Entry with current cell value
-            entry_widget.insert(0, current_value)
-            entry_widget.select_range(0, tk.END)
-            entry_widget.focus_set()
-    
-            # Bind keys to handle user acceptance or cancellation
-            entry_widget.bind("<Return>", lambda e: saveEdit(entry_widget.get()))
-            entry_widget.bind("<Tab>", lambda e: saveEdit(entry_widget.get()))
-            entry_widget.bind("<FocusOut>", cancelEdit)
-    
-        # =======================================
-        #  Dropdown Columns
-        # =======================================
-        elif col_name in ["Category", "Account", "Payee", "Action", "Asset"]:
-            x, y, width, height = self.widget_dashboard.tree.bbox(item, column)
-            
-            # Create a readonly Combobox over the cell
-            dropdown = ttk.Combobox(self.widget_dashboard.tree, state="readonly")
-            dropdown.place(x=x, y=y, width=width, height=height)
-    
-            # Provide the dropdown values
-            if col_name == "Category":
-                dropdown["values"] = self.main_dashboard.categories
-            elif col_name == "Payee":
-                dropdown["values"] = self.main_dashboard.payees
-            elif col_name == "Account":
-                accounts = self.getBankingAccounts()
-                dropdown["values"] = accounts
-            elif col_name == "Asset":
-                dropdown["values"] = self.main_dashboard.assets
-            elif col_name == 'Action':
-                dropdown["values"] = self.main_dashboard.actions
-    
-            dropdown.set(current_value)
-            
-            # When user picks an item from the dropdown, call saveEdit
-            dropdown.bind("<<ComboboxSelected>>", lambda e: saveEdit(dropdown.get()))
-            dropdown.focus_set()
-            
-            # If user moves focus away, cancel editing
-            dropdown.bind("<FocusOut>", cancelEdit)
-
-    def manageItems(self, item_type):
-        """General function to manage (add, modify, delete) items such as categories or accounts."""
-
-        def loadItems():
-            # Clear and repopulate the listbox
-            listbox.delete(0, tk.END)
-            for item in sorted(item_list, key=str.lower):
-                listbox.insert(tk.END, item)
-
-        def addItem():
-            new_item = simpledialog.askstring(f"Add {item_type}", f"Enter new {item_type}:")
-            if new_item and new_item not in item_list:
-                item_list.append(new_item)
-                listbox.insert(tk.END, new_item)
-            saveItems()
-
-        def modifyItem():
-            selected_index = listbox.curselection()
-            if selected_index:
-                old_item = listbox.get(selected_index)
-                new_item = simpledialog.askstring("Modify Item", "Enter new name:", initialvalue=old_item)
-                if new_item and new_item not in item_list:
-                    selected_value = listbox.get(selected_index)
-                    item_list.remove(selected_value)
-                    item_list.append(new_item)
-                    listbox.delete(selected_index)
-                    listbox.insert(selected_index, new_item)
-                saveItems()
-
-        def deleteItem():
-            selected_index = listbox.curselection()
-            if selected_index:
-                confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this item?")
-                if confirm:
-                    selected_value = listbox.get(selected_index)
-                    if selected_value in item_list:
-                        item_list.remove(selected_value)
-                    listbox.delete(selected_index)
-                    saveItems()
-                self.manageItems(item_type)
-
-        def saveItems():
-            # Call functions to populate the listbox
-            if item_type == 'Categories':
-                file = self.main_dashboard.banking_categories_file
-
-                with open(file, "w") as f:
-                    for item in item_list:
-                        f.write(item + "\n")
-
-                self.getCategories()
-
-            elif item_type == 'Assets':
-                file = self.main_dashboard.investment_assets_file
-
-                with open(file, "w") as f:
-                    for item in item_list:
-                        f.write(item + "\n")
-
-                self.getAssets()
-
-            if item_type == 'Payees':
-                file = self.main_dashboard.payee_file
-
-                with open(file, "w") as f:
-                    for item in item_list:
-                        f.write(item + "\n")
-
-                self.getPayees()
-
-            if item_type == 'Actions':
-                file = self.main_dashboard.investment_actions_file
-
-                with open(file, "w") as f:
-                    for item in item_list:
-                        f.write(item + "\n")
-
-                self.getInvestmentActions()
-
-            if item_type == 'Banking Accounts':
-                self.main_dashboard.banking_accounts = sorted(item_list, key=str.lower)
-                
-                self.getBankingAccounts()
-
-            if item_type == 'Investment Accounts':
-                self.main_dashboard.investment_accounts = sorted(item_list, key=str.lower)
-                
-                self.getInvestmentAccounts()
-
-        def closeWindow(event=None):
-            manage_window.destroy()
-
-        # Create a Toplevel window anchored relative to the main dashboard
-        manage_window = tk.Toplevel(self.main_dashboard)
-        manage_window.title("Manage Items")
-        
-        # Set window dimensions and position
-        window_height, window_width = 400, 300
-        Windows.openRelativeWindow(
-            manage_window, 
-            main_width=self.main_dashboard.winfo_x(),
-            main_height=self.main_dashboard.winfo_y(),
-            width=window_width, 
-            height=window_height
-        )
-        
-        # Title label
-
-        if item_type == 'Categories' and self.main_dashboard.table_to_display == 'Investments':
-            item_type = 'Assets'
-
-        ttk.Label(
-            manage_window, 
-            text=item_type,
-            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")
-        ).pack(pady=5)
-
-        # Frame for the Listbox and scrollbar
-        frame = tk.Frame(manage_window, bg=StyleConfig.BG_COLOR)
-        frame.pack(fill="both", expand=True, padx=10, pady=5)
-    
-        # Create a Listbox to display existing values
-        listbox = tk.Listbox(frame, height=15, bg=StyleConfig.BG_COLOR)
-        listbox.pack(side=tk.LEFT, fill="both", expand=True)
-    
-        # Attach a vertical scrollbar to the listbox
-        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=listbox.yview)
-        scrollbar.pack(side=tk.RIGHT, fill="y")
-        listbox.config(yscrollcommand=scrollbar.set)
-
-        # Frame to hold the Add / Modify / Delete / Exit buttons
-        button_frame = tk.Frame(manage_window, bg=StyleConfig.BG_COLOR)
-        button_frame.pack(pady=10)
-
-        # Button styling from StyleConfig
-        button_attributes = {
-            "bg": StyleConfig.BUTTON_COLOR,
-            "fg": StyleConfig.TEXT_COLOR,
-            "font": (StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE),
-            "relief": StyleConfig.BUTTON_STYLE,
-            "padx": StyleConfig.BUTTON_PADDING,
-            "pady": StyleConfig.BUTTON_PADDING,
-            "width": 10  # Ensure a consistent width for each button
-        }
-
-        # Create the buttons
-        add_button = tk.Button(button_frame, text="Add", command=addItem, **button_attributes)
-        modify_button = tk.Button(button_frame, text="Modify", command=modifyItem, **button_attributes)
-        delete_button = tk.Button(button_frame, text="Delete", command=deleteItem, **button_attributes)
-        exit_button = tk.Button(button_frame, text="Exit", command=closeWindow, **button_attributes)
-    
-        # Lay out buttons: Add, Modify, Delete in the first row, Exit in the second row
-        add_button.grid(row=0, column=0, padx=5, pady=5)
-        modify_button.grid(row=0, column=1, padx=5, pady=5)
-        delete_button.grid(row=0, column=2, padx=5, pady=5)
-        exit_button.grid(row=1, column=0, columnspan=3, padx=5, pady=5)
-
-        # Call functions to populate the listbox
-        if item_type == 'Categories':
-            self.getCategories()
-            item_list = self.main_dashboard.categories
-            
-        elif item_type == 'Assets':
-            self.getAssets()
-            item_list = self.main_dashboard.assets
-
-        elif item_type == 'Payees':
-            self.getPayees()
-            item_list = self.main_dashboard.payees
-
-        elif item_type == 'Actions':
-            self.getInvestmentActions()
-            item_list = self.main_dashboard.actions
-
-        elif item_type == 'Banking Accounts':
-            self.getBankingAccounts()
-            item_list = self.main_dashboard.banking_accounts
-
-        elif item_type == 'Investment Accounts':
-            self.getInvestmentAccounts()
-            item_list = self.main_dashboard.investment_accounts
-
-        item_list = sorted(item_list)
-
-        # Populate the listbox
-        loadItems()
-
-        # Bind Escape key to close the window, and give focus to it
-        manage_window.bind("<Escape>", lambda event: closeWindow())
-        manage_window.bind("<Return>", lambda event: closeWindow())
-        manage_window.bind("<Delete>", lambda event: deleteItem())
-        manage_window.focus_force()
-
+    ########################################################
+    # Reports Window
+    ########################################################
     def displayReports(self):
         #TODO
         """
@@ -2565,91 +2671,9 @@ class DashboardActions:
         """
         self
     
-    def smoothScroll(self, event=None) -> None:
-        """
-        Adjusts vertical scrolling speed for a Tkinter Listbox widget during mouse wheel events.
-    
-        This function:
-        1. Verifies the widget receiving the event is a Listbox.
-        2. Retrieves the user-configured scroll speed from StyleConfig.SCROLL_SPEED.
-        3. Calls the Listbox's yview_scroll method with a speed-dependent delta,
-           allowing for custom "smooth" or accelerated scrolling behavior.
-    
-        Parameters
-        ----------
-        event : tk.Event | None, optional
-            The Tkinter event object triggered by the mouse wheel.
-            If None, the function does nothing.
-    
-        Returns
-        -------
-        None
-            Modifies the Listbox's scroll position in-place.
-        """
-        widget = event.widget
-        if isinstance(widget, tk.Listbox):
-            speed = StyleConfig.SCROLL_SPEED
-            # event.delta > 0 means the wheel was scrolled 'up', 
-            # so we negate the speed to scroll 'up' in the list.
-            widget.yview_scroll(-speed if event.delta > 0 else speed, "units")
-            
-    def selectAllRows(self) -> None:
-        """
-        Selects all rows in the transaction table (Treeview).
-    
-        This method:
-        1. Retrieves all item IDs from the Treeview via get_children().
-        2. Calls selection_set(...) on those items, marking each row as selected.
-        """
-        self.widget_dashboard.tree.selection_set(
-            self.widget_dashboard.tree.get_children()
-        )
-            
-    def clearTable(self, event: tk.Event | None = None) -> None:
-        """
-        Prompts the user for confirmation and, if accepted, clears all transactions.
-    
-        This method:
-        1. Checks if main_dashboard.all_banking_data has entries.
-        2. Asks the user to confirm deletion of all transactions.
-        3. If confirmed, resets main_dashboard.all_banking_data to an empty DataFrame,
-           and removes all items from the accounts list, investments list, 
-           and the Treeview.
-    
-        Parameters
-        ----------
-        event : tk.Event | None, optional
-            A Tkinter event object, typically passed when bound to a GUI event.
-            Defaults to None.
-    
-        Returns
-        -------
-        None
-            Modifies the application's data and UI elements in-place.
-        """
-        if not self.main_dashboard.all_banking_data.empty:
-            confirm = messagebox.askyesno(
-                "Confirm Delete",
-                "Are you sure you want to delete all transaction(s)?"
-            )
-            
-            if confirm is None or not confirm:  # User canceled or closed dialog
-                return
-            
-            # If confirmed, clear everything
-            self.main_dashboard.all_banking_data = pd.DataFrame()
-            self.main_dashboard.all_investment_data = pd.DataFrame()
-            self.main_dashboard.table_to_display = 'Banking' # Or Investments
-            self.main_dashboard.initial_account_balances = pd.DataFrame(columns=['Account', 'Initial Date', 'Initial Value'])
-
-            self.main_dashboard.current_account_balances = {}
-            self.main_dashboard.account_cases = {}
-
-            self.widget_dashboard.tree.delete(*self.widget_dashboard.tree.get_children())
-
-            for listbox in self.widget_dashboard.sidebar_listboxes:
-                listbox.delete(0, tk.END)
-    
+    ########################################################
+    # Search Functions
+    ########################################################
     def searchData(
                     self,
                     single_query: str | None = None,
