@@ -134,7 +134,6 @@ class FinanceTracker(tk.Tk):
             return ''
     
     def changeSaveFile(self):
-        print (self.save_file)
         try:
             with open(self.save_file_loc, 'w') as f:
                 f.write(self.save_file)

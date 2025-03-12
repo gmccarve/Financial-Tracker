@@ -2,8 +2,12 @@ import os
 import pandas as pd
 import pickle
 from datetime import datetime, timedelta
+import tkinter as tk
 from tkinter import messagebox, filedialog, ttk
+from tkcalendar import Calendar
+
 from typing import List, Tuple, Union
+
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -236,6 +240,38 @@ class Windows:
         new_y = main_height + 250
     
         new_window.geometry(f"{width}x{height}+{new_x}+{new_y}")  # Format: "WIDTHxHEIGHT+X+Y"
+
+    @staticmethod
+    def openCalendarWindow(entry, date): 
+        # Create a Toplevel window with a calendar
+        cal_win = tk.Toplevel()
+        cal_win.title("Select Date")
+        cal_win.geometry("250x250")
+
+        cal = Calendar(
+            cal_win,
+            selectmode="day",
+            year=date.year,
+            month=date.month,
+            day=date.day,
+            date_pattern='yyyy-mm-dd'
+        )
+        cal.pack(padx=10, pady=10)
+
+        def selectDate():
+            entry.delete(0, tk.END)
+            entry.insert(0, cal.get_date())
+            cal_win.destroy()
+
+        # Buttons for confirming or canceling date selection
+        tk.Button(cal_win, text="OK", command=selectDate).pack(pady=5, padx=5)
+        tk.Button(cal_win, text="Cancel", command=cal_win.destroy).pack(pady=5, padx=5)
+
+        # Key bindings for date selection
+        cal_win.bind("<Return>", selectDate)
+        cal_win.bind("<Escape>", cal_win.destroy)
+        cal_win.focus_force() 
+    
         
 class Tables:
     # Define class-level variables (shared across all instances)
