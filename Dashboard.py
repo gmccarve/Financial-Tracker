@@ -29,123 +29,9 @@ from datetime import datetime, timedelta
 
 from typing import List, Tuple, Union
 
-from Utility import Utility, Tables, Windows, Classifier
+from Utility import Utility, Tables, Windows, Classifier, DataFrameProcessor
 from StyleConfig import StyleConfig
 
-
-class DataFrameProcessor:
-    @staticmethod
-    def getDataFrameIndex(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Ensures that the 'Index' column exists and is correctly set as the first column.
-
-        If the 'Index' column does not exist, it is created from the DataFrame's index.
-        If it already exists, it is removed and reinserted as the first column.
-
-        Parameters:
-        - df (pd.DataFrame): The input DataFrame.
-
-        Returns:
-        - pd.DataFrame: Updated DataFrame with 'Index' as the first column.
-        """
-        df = df.reset_index(drop=True)  # Reset index to start fresh
-        if 'No.' in df.columns:
-            df = df.drop(columns=['No.'])
-        df.insert(0, 'No.', df.index)
-        return df
-    @staticmethod 
-    def convertCurrency(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Converts the 'Payment', 'Deposit', and 'Balance' columns in a DataFrame to cents (int) format
-
-        Parameters:
-        - df (pd.DataFrame): The input DataFrame containing a 'Date' column.
-
-        Returns:
-        - pd.DataFrame: Updated DataFrame
-        """
-        for col in ['Payment', 'Deposit', 'Balance']:
-            if col in df.columns:
-                df[col] = df[col].astype(str)  # Ensure strings for processing
-                
-                # Remove dollar signs, commas, and handle negative parentheses
-                df[col] = df[col].replace({'\\$': '', ',': '', '\\(': '-', '\\)': ''}, regex=True)
-                
-                # Convert to numeric, replace NaNs with 0, multiply by 100, and round to int
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-                df[col] = (df[col] * 100).round().astype(int)
-
-        return df
-    @staticmethod 
-    def convertToDatetime(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Converts the 'Date' column in a DataFrame to datetime format, ensuring proper formatting.
-
-        Parameters:
-        - df (pd.DataFrame): The input DataFrame containing a 'Date' column.
-
-        Returns:
-        - pd.DataFrame: Updated DataFrame with the 'Date' column converted to datetime format.
-        """
-        try:
-            df['Date'] = pd.to_datetime(df['Date'], dayfirst=False, format='mixed').dt.date
-        except KeyError:
-            pass
-        return df
-    @staticmethod 
-    def sortDataFrame(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Sorts a DataFrame in ascending order based on 'Date' column.
-
-        Parameters:
-        - df (pd.DataFrame): The input DataFrame.
-
-        Returns:
-        - pd.DataFrame: Sorted DataFrame with a reset index.
-        """
-        df = df.sort_values(by=['Date'], ascending=True, inplace=False).reset_index(drop=True) 
-        return df
-    @staticmethod 
-    def getStartEndDates(df: pd.DataFrame) -> Tuple[pd.Timestamp, pd.Timestamp]:
-        """
-        Retrieves the earliest and latest dates from the 'Date' column of the DataFrame.
-
-        Parameters:
-        - df (pd.DataFrame): The input DataFrame containing a 'Date' column.
-
-        Returns:
-        - Tuple[pd.Timestamp, pd.Timestamp]: A tuple containing the earliest and latest dates.
-        """
-        return df['Date'].min(), df['Date'].max()
-    @staticmethod 
-    def getMinMaxVals(df: pd.DataFrame) -> Tuple[float, float]:
-        """
-        Computes the minimum and maximum values of the 'Amount' column in the DataFrame.
-
-        Parameters:
-        - df (pd.DataFrame): The input DataFrame containing an 'Amount' column.
-
-        Returns:
-        - Tuple[float, float]: A tuple containing (min_value, max_value) from the 'Amount' column.
-        """
-        return df['Amount'].min(), df['Amount'].max()
-    @staticmethod 
-    def findMismatchedCategories( df: pd.DataFrame, df_type: str) -> pd.DataFrame:
-        """
-        Identifies and marks categories that are not found in the predefined category list.
-
-        Categories that are not in the list will be prefixed with an asterisk (*).
-
-        Parameters:
-        - df (pd.DataFrame): The input DataFrame containing a 'Category' column.
-        - df_type (str): The type of DataFrame ('inc' for income, 'exp' for expenses).
-
-        Returns:
-        - pd.DataFrame: Updated DataFrame with mismatched categories marked with an asterisk (*).
-        """
-        cat_list, _ = Utility.getCategoryTypes(df_type)
-        df['Category'] = df['Category'].astype(str).apply(lambda x: f"*{x}" if x.strip() not in map(str.strip, map(str, cat_list)) else x)
-        return df
 
 class DataManager:
     @staticmethod
@@ -410,7 +296,7 @@ class DataManager:
         """
         
         if save_file == '':
-            return pd.DataFrame, {}
+            return pd.DataFrame, {}, pd.DataFrame(), {}
                 
         try:
             with open(save_file, "rb") as f:
@@ -430,7 +316,7 @@ class DataManager:
             return all_banking_data_df, all_investment_data_df, init_bal_dict, acc_type_dict
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load file: {e}")
-            return pd.DataFrame(), {}, {}
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), {}
         
 class TransactionManager:            
     @staticmethod     
@@ -501,8 +387,6 @@ class TransactionManager:
 
                 # Assign the 'No.' explicitly
                 new_df.at[0, 'No.'] = selected_number
-
-                print (new_df)
 
                 # Update row values directly
                 for col in new_df.columns:
@@ -849,9 +733,9 @@ class DashboardUI(tk.Frame):
             ("Delete",      "delete.png",   self.actions_manager.deleteTransaction),
             ("Open",        "open.png",     self.actions_manager.openData),
             ("Balances",    "accounts.png", self.actions_manager.trackBankBalances),
-            ("Payee",       "payee.png",    self.actions_manager.viewPayees),
-            ("Category",    "category.png", self.actions_manager.viewCategories),
-            ("Actions",      "actions.png", self.actions_manager.viewInvestmentActions),
+            ("Payee",       "payee.png",    lambda: self.actions_manager.manageItems("Payees")),
+            ("Category",    "category.png", lambda: self.actions_manager.manageItems("Categories")),
+            ("Actions",     "actions.png",  lambda: self.actions_manager.manageItems("Actions")),
             ("Banking",     "banking.png",  lambda: self.actions_manager.switchAccountView("Banking")),
             ("Stocks",      "stonks.png",   lambda: self.actions_manager.switchAccountView("Investments")),
             ("Reports",     "budget.png",   self.actions_manager.displayReports),
@@ -1244,7 +1128,8 @@ class DashboardActions:
             new_file=''
         )
         # Update the last saved file record
-        self.main_dashboard.master.changeSaveFile()
+        if self.main_dashboard.master.save_file is not None:
+            self.main_dashboard.master.changeSaveFile()
             
     def loadSaveFile(self, event: tk.Event | None = None) -> None:
         """
@@ -1267,6 +1152,7 @@ class DashboardActions:
         None
             The main_dashboard's data structures and the UI table are updated in-place.
         """
+
         all_banking_data_df, all_investment_data_df, init_bal_df, acc_type_dict = DataManager.loadSaveFile(
             self.main_dashboard.master.save_file
         )
@@ -1287,6 +1173,11 @@ class DashboardActions:
         self.main_dashboard.account_cases = acc_type_dict
     
         self.updateTable(self.main_dashboard.all_banking_data)
+
+        self.getCategories()
+        self.getAssets()
+        self.getInvestmentActions()
+        self.getPayees()
     
     def updateTable(self, df:pd.DataFrame) -> None:
         """
@@ -1993,490 +1884,18 @@ class DashboardActions:
         self.main_dashboard.actions = sorted(actions)   
 
     def getInvestmentAccounts(self) -> None:
-        try:
-            return self.main_dashboard.all_investment_data["Account"].unique().tolist()
-        except:
-            return []
+        current_accounts =  self.main_dashboard.all_investment_data["Account"].unique().tolist()
+        for account in current_accounts:
+            if account not in self.main_dashboard.investment_accounts:
+                self.main_dashboard.investment_accounts.append(account)
+        self.main_dashboard.investment_accounts = sorted(self.main_dashboard.investment_accounts)
     
     def getBankingAccounts(self) -> None:
-        try:
-            return self.main_dashboard.all_banking_data["Account"].unique().tolist()
-        except:
-            return []
-
-    def viewInvestmentActions(self) -> None:
-        """
-        Opens a Tkinter Toplevel window for managing (add, modify, delete) categories.
-    
-        The window displays all current categories in a Listbox and provides:
-        - 'Add' and 'Modify' functions that use a simpledialog to get input from the user.
-        - 'Delete' function with confirmation.
-        - An 'Exit' button to close the window.
-        - Scrollable Listbox to handle many categories.
-    
-        Returns
-        -------
-        None
-            The action management UI is created and run in a child window; nothing is returned.
-        """
-        # Create a Toplevel window anchored relative to the main dashboard
-        actions_window = tk.Toplevel(self.main_dashboard)
-        actions_window.title("Manage Actions")
-        
-        # Set window dimensions and position
-        window_height, window_width = 400, 300
-        Windows.openRelativeWindow(
-            actions_window, 
-            main_width=self.main_dashboard.winfo_x(),
-            main_height=self.main_dashboard.winfo_y(),
-            width=window_width, 
-            height=window_height
-        )
-        
-        # Title label
-        ttk.Label(
-            actions_window, 
-            text="Actions",
-            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")
-        ).pack(pady=5)
-        
-        # Frame for the Listbox and scrollbar
-        list_frame = ttk.Frame(actions_window)
-        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
-    
-        # Create a Listbox to display existing categories
-        actions_listbox = tk.Listbox(list_frame, height=15)
-        actions_listbox.pack(side=tk.LEFT, fill="both", expand=True)
-    
-        # Attach a vertical scrollbar to the listbox
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=actions_listbox.yview)
-        scrollbar.pack(side=tk.RIGHT, fill="y")
-        actions_listbox.config(yscrollcommand=scrollbar.set)
-        
-        def loadActions() -> None:
-            """
-            Refreshes the main_dashboard.categories list and reloads them into the listbox.
-            """
-            self.getInvestmentActions() 
-
-            action_list = self.main_dashboard.actions
-
-            # Clear and repopulate the listbox
-            actions_listbox.delete(0, tk.END)
-            for action in action_list:
-                actions_listbox.insert(tk.END, action)
-    
-        def addAction() -> None:
-            """
-            Opens a small dialog to input a new action, then appends it to the list.
-            Updates the action file if successful.
-            """
-            new_action = simpledialog.askstring("Add Action", "Enter new action:")
-            if new_action and new_action not in self.main_dashboard.actions:
-                self.main_dashboard.actions.append(new_action)
-                actions_listbox.insert(tk.END, new_action)
-                saveActions()
-    
-        def modifyAction() -> None:
-            """
-            Opens a small dialog to rename the currently selected action.
-            """
-            selected_index = actions_listbox.curselection()
-            if selected_index:
-                old_action = actions_listbox.get(selected_index)
-                new_action = simpledialog.askstring(
-                    "Modify Action",
-                    "Enter new name:",
-                    initialvalue=old_action
-                )
-                if new_action and new_action not in self.main_dashboard.actions:
-                    self.main_dashboard.actions[selected_index[0]] = new_action
-                    actions_listbox.delete(selected_index)
-                    actions_listbox.insert(selected_index, new_action)
-                    saveActions()
-    
-        def deleteAction() -> None:
-            """
-            Deletes the currently selected action after user confirmation.
-            Updates the action file and reloads the listbox view.
-            """
-            selected_index = actions_listbox.curselection()
-            if selected_index:
-                confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this action?")
-                if confirm:
-                    # Remove item from self.main_dashboard.categories
-                    sorted(self.main_dashboard.actions.pop(selected_index[0]))
-                    actions_listbox.delete(selected_index)
-                    saveActions()
-                # Refresh categories in the UI if needed
-                self.viewInvestmentActions()
-    
-        def saveActions() -> None:
-            """
-            Overwrites the actions file with the current contents of main_dashboard.actions.
-            """
-            with open(self.main_dashboard.investment_actions_file, "w") as f:
-                for action in self.main_dashboard.actions:
-                    f.write(action + "\n")
-        
-        def closeWindow(event=None) -> None:
-            """
-            Closes the action window when called.
-            """
-            actions_window.destroy()
-    
-        # Call loadCategories initially to populate the listbox
-        loadActions()
-    
-        # Frame to hold the Add / Modify / Delete / Exit buttons
-        button_frame = tk.Frame(actions_window, bg=StyleConfig.BG_COLOR)
-        button_frame.pack(pady=10)
-    
-        # Button styling from StyleConfig
-        button_attributes = {
-            "bg": StyleConfig.BUTTON_COLOR,
-            "fg": StyleConfig.TEXT_COLOR,
-            "font": (StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE),
-            "relief": StyleConfig.BUTTON_STYLE,
-            "padx": StyleConfig.BUTTON_PADDING,
-            "pady": StyleConfig.BUTTON_PADDING,
-            "width": 10  # Ensure a consistent width for each button
-        }
-        
-       # Create the buttons
-        add_button = tk.Button(button_frame, text="Add", command=addAction, **button_attributes)
-        modify_button = tk.Button(button_frame, text="Modify", command=modifyAction, **button_attributes)
-        delete_button = tk.Button(button_frame, text="Delete", command=deleteAction, **button_attributes)
-        exit_button = tk.Button(button_frame, text="Exit", command=closeWindow, **button_attributes)
-    
-        # Lay out buttons: Add, Modify, Delete in the first row, Exit in the second row
-        add_button.grid(row=0, column=0, padx=5, pady=5)
-        modify_button.grid(row=0, column=1, padx=5, pady=5)
-        delete_button.grid(row=0, column=2, padx=5, pady=5)
-        exit_button.grid(row=1, column=0, columnspan=3, padx=5, pady=5)
-    
-        # Bind Escape key to close the window, and give focus to it
-        actions_window.bind("<Escape>", lambda event: closeWindow())
-        actions_window.focus_force()
-
-    def viewCategories(self) -> None:
-        """
-        Opens a Tkinter Toplevel window for managing (add, modify, delete) categories.
-    
-        The window displays all current categories in a Listbox and provides:
-        - 'Add' and 'Modify' functions that use a simpledialog to get input from the user.
-        - 'Delete' function with confirmation.
-        - An 'Exit' button to close the window.
-        - Scrollable Listbox to handle many categories.
-    
-        Returns
-        -------
-        None
-            The category management UI is created and run in a child window; nothing is returned.
-        """
-        # Create a Toplevel window anchored relative to the main dashboard
-        category_window = tk.Toplevel(self.main_dashboard)
-        category_window.title("Manage Categories")
-        
-        # Set window dimensions and position
-        window_height, window_width = 400, 300
-        Windows.openRelativeWindow(
-            category_window, 
-            main_width=self.main_dashboard.winfo_x(),
-            main_height=self.main_dashboard.winfo_y(),
-            width=window_width, 
-            height=window_height
-        )
-        
-        # Title label
-        ttk.Label(
-            category_window, 
-            text="Categories",
-            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")
-        ).pack(pady=5)
-        
-        # Frame for the Listbox and scrollbar
-        list_frame = ttk.Frame(category_window)
-        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
-    
-        # Create a Listbox to display existing categories
-        category_listbox = tk.Listbox(list_frame, height=15)
-        category_listbox.pack(side=tk.LEFT, fill="both", expand=True)
-    
-        # Attach a vertical scrollbar to the listbox
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=category_listbox.yview)
-        scrollbar.pack(side=tk.RIGHT, fill="y")
-        category_listbox.config(yscrollcommand=scrollbar.set)
-        
-        def loadCategories() -> None:
-            """
-            Refreshes the main_dashboard.categories list and reloads them into the listbox.
-            """
-            
-            self.getCategories()  # Merges file categories with any new ones from the DataFrame
-            self.getAssets()  # Merges file categories with any new ones from the DataFrame
-
-            if self.main_dashboard.table_to_display == 'Banking':
-                cat_list = self.main_dashboard.categories
-            elif self.main_dashboard.table_to_display == 'Investments':
-                cat_list = self.main_dashboard.assets
-
-            # Clear and repopulate the listbox
-            category_listbox.delete(0, tk.END)
-            for category in cat_list:
-                category_listbox.insert(tk.END, category)
-    
-        def addCategory() -> None:
-            """
-            Opens a small dialog to input a new category, then appends it to the list.
-            Updates the category file if successful.
-            """
-            new_category = simpledialog.askstring("Add Category", "Enter new category:")
-            if new_category and new_category not in self.main_dashboard.categories:
-                self.main_dashboard.categories.append(new_category)
-                category_listbox.insert(tk.END, new_category)
-                saveCategories()
-    
-        def modifyCategory() -> None:
-            """
-            Opens a small dialog to rename the currently selected category.
-            """
-            selected_index = category_listbox.curselection()
-            if selected_index:
-                old_category = category_listbox.get(selected_index)
-                new_category = simpledialog.askstring(
-                    "Modify Category",
-                    "Enter new name:",
-                    initialvalue=old_category
-                )
-                if new_category and new_category not in self.main_dashboard.categories:
-                    self.main_dashboard.categories[selected_index[0]] = new_category
-                    category_listbox.delete(selected_index)
-                    category_listbox.insert(selected_index, new_category)
-                    saveCategories()
-    
-        def deleteCategory() -> None:
-            """
-            Deletes the currently selected category after user confirmation.
-            Updates the category file and reloads the listbox view.
-            """
-            selected_index = category_listbox.curselection()
-            if selected_index:
-                confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this category?")
-                if confirm:
-                    # Remove item from self.main_dashboard.categories
-                    sorted(self.main_dashboard.categories.pop(selected_index[0]))
-                    category_listbox.delete(selected_index)
-                    saveCategories()
-                # Refresh categories in the UI if needed
-                self.viewCategories()
-    
-        def saveCategories() -> None:
-            """
-            Overwrites the category file with the current contents of main_dashboard.categories.
-            """
-            if self.main_dashboard.table_to_display == 'Banking':
-                cat_file = self.main_dashboard.banking_categories
-            elif self.main_dashboard.table_to_display == 'Investments':
-                cat_file = self.main_dashboard.investment_assets
-            
-            with open(cat_file, "w") as f:
-                for category in self.main_dashboard.categories:
-                    f.write(category + "\n")
-        
-        def closeWindow(event=None) -> None:
-            """
-            Closes the category window when called.
-            """
-            category_window.destroy()
-    
-        # Call loadCategories initially to populate the listbox
-        loadCategories()
-    
-        # Frame to hold the Add / Modify / Delete / Exit buttons
-        button_frame = tk.Frame(category_window, bg=StyleConfig.BG_COLOR)
-        button_frame.pack(pady=10)
-    
-        # Button styling from StyleConfig
-        button_attributes = {
-            "bg": StyleConfig.BUTTON_COLOR,
-            "fg": StyleConfig.TEXT_COLOR,
-            "font": (StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE),
-            "relief": StyleConfig.BUTTON_STYLE,
-            "padx": StyleConfig.BUTTON_PADDING,
-            "pady": StyleConfig.BUTTON_PADDING,
-            "width": 10  # Ensure a consistent width for each button
-        }
-        
-       # Create the buttons
-        add_button = tk.Button(button_frame, text="Add", command=addCategory, **button_attributes)
-        modify_button = tk.Button(button_frame, text="Modify", command=modifyCategory, **button_attributes)
-        delete_button = tk.Button(button_frame, text="Delete", command=deleteCategory, **button_attributes)
-        exit_button = tk.Button(button_frame, text="Exit", command=closeWindow, **button_attributes)
-    
-        # Lay out buttons: Add, Modify, Delete in the first row, Exit in the second row
-        add_button.grid(row=0, column=0, padx=5, pady=5)
-        modify_button.grid(row=0, column=1, padx=5, pady=5)
-        delete_button.grid(row=0, column=2, padx=5, pady=5)
-        exit_button.grid(row=1, column=0, columnspan=3, padx=5, pady=5)
-    
-        # Bind Escape key to close the window, and give focus to it
-        category_window.bind("<Escape>", lambda event: closeWindow())
-        category_window.focus_force()
-
-    def viewPayees(self) -> None:
-        """
-        Opens a Tkinter Toplevel window for managing (add, modify, delete) payees.
-    
-        The window displays all current payees in a Listbox and provides:
-        - 'Add' and 'Modify' functions that use a simpledialog to get input from the user.
-        - 'Delete' function with confirmation.
-        - An 'Exit' button to close the window.
-        - Scrollable Listbox to handle many payees.
-    
-        Returns
-        -------
-        None
-            The payee management UI is created and run in a child window; nothing is returned.
-        """
-        # Create a Toplevel window anchored relative to the main dashboard
-        payee_window = tk.Toplevel(self.main_dashboard)
-        payee_window.title("Manage Payees")
-        
-        # Set window dimensions and position
-        window_height, window_width = 400, 300
-        Windows.openRelativeWindow(
-            payee_window, 
-            main_width=self.main_dashboard.winfo_x(),
-            main_height=self.main_dashboard.winfo_y(),
-            width=window_width, 
-            height=window_height
-        )
-        
-        # Title label
-        ttk.Label(
-            payee_window, 
-            text="Payees",
-            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")
-        ).pack(pady=5)
-        
-        # Frame for the Listbox and scrollbar
-        list_frame = ttk.Frame(payee_window)
-        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
-    
-        # Create a Listbox to display existing payees
-        payee_listbox = tk.Listbox(list_frame, height=15)
-        payee_listbox.pack(side=tk.LEFT, fill="both", expand=True)
-    
-        # Attach a vertical scrollbar to the listbox
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=payee_listbox.yview)
-        scrollbar.pack(side=tk.RIGHT, fill="y")
-        payee_listbox.config(yscrollcommand=scrollbar.set)
-        
-        def loadPayees() -> None:
-            """
-            Refreshes the main_dashboard.payees list and reloads them into the listbox.
-            """
-            self.getPayees()  # Merges file payees with any new ones from the DataFrame
-    
-            # Clear and repopulate the listbox
-            payee_listbox.delete(0, tk.END)
-            for payee in self.main_dashboard.payees:
-                payee_listbox.insert(tk.END, payee)
-    
-        def addPayee() -> None:
-            """
-            Opens a small dialog to input a new payee, then appends it to the list.
-            Updates the payee file if successful.
-            """
-            new_payee = simpledialog.askstring("Add Payee", "Enter new payee:")
-            if new_payee and new_payee not in self.main_dashboard.payees:
-                self.main_dashboard.payees.append(new_payee)
-                payee_listbox.insert(tk.END, new_payee)
-                savePayees()
-    
-        def modifyPayee() -> None:
-            """
-            Opens a small dialog to rename the currently selected payee.
-            """
-            selected_index = payee_listbox.curselection()
-            if selected_index:
-                old_payee = payee_listbox.get(selected_index)
-                new_payee = simpledialog.askstring(
-                    "Modify Payee",
-                    "Enter new name:",
-                    initialvalue=old_payee
-                )
-                if new_payee and new_payee not in self.main_dashboard.payees:
-                    self.main_dashboard.payees[selected_index[0]] = new_payee
-                    payee_listbox.delete(selected_index)
-                    payee_listbox.insert(selected_index, new_payee)
-                    savePayees()
-    
-        def deletePayee() -> None:
-            """
-            Deletes the currently selected payee after user confirmation.
-            Updates the payee file and reloads the listbox view.
-            """
-            selected_index = payee_listbox.curselection()
-            if selected_index:
-                confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this payee?")
-                if confirm:
-                    # Remove item from self.main_dashboard.payees
-                    sorted(self.main_dashboard.payees.pop(selected_index[0]))
-                    payee_listbox.delete(selected_index)
-                    savePayees()
-                # Refresh payees in the UI if needed
-                self.viewPayees()
-    
-        def savePayees() -> None:
-            """
-            Overwrites the payee file with the current contents of main_dashboard.payees.
-            """
-            with open(self.main_dashboard.payee_file, "w") as f:
-                for payee in self.main_dashboard.payees:
-                    f.write(payee + "\n")
-            self.main_dashboard.payees = sorted(self.main_dashboard.payees)
-        
-        def closeWindow(event=None) -> None:
-            """
-            Closes the payee window when called.
-            """
-            payee_window.destroy()
-    
-        # Call loadPayees initially to populate the listbox
-        loadPayees()
-    
-        # Frame to hold the Add / Modify / Delete / Exit buttons
-        button_frame = tk.Frame(payee_window, bg=StyleConfig.BG_COLOR)
-        button_frame.pack(pady=10)
-    
-        # Button styling from StyleConfig
-        button_attributes = {
-            "bg": StyleConfig.BUTTON_COLOR,
-            "fg": StyleConfig.TEXT_COLOR,
-            "font": (StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE),
-            "relief": StyleConfig.BUTTON_STYLE,
-            "padx": StyleConfig.BUTTON_PADDING,
-            "pady": StyleConfig.BUTTON_PADDING,
-            "width": 10  # Ensure a consistent width for each button
-        }
-        
-       # Create the buttons
-        add_button = tk.Button(button_frame, text="Add", command=addPayee, **button_attributes)
-        modify_button = tk.Button(button_frame, text="Modify", command=modifyPayee, **button_attributes)
-        delete_button = tk.Button(button_frame, text="Delete", command=deletePayee, **button_attributes)
-        exit_button = tk.Button(button_frame, text="Exit", command=closeWindow, **button_attributes)
-    
-        # Lay out buttons: Add, Modify, Delete in the first row, Exit in the second row
-        add_button.grid(row=0, column=0, padx=5, pady=5)
-        modify_button.grid(row=0, column=1, padx=5, pady=5)
-        delete_button.grid(row=0, column=2, padx=5, pady=5)
-        exit_button.grid(row=1, column=0, columnspan=3, padx=5, pady=5)
-    
-        # Bind Escape key to close the window, and give focus to it
-        payee_window.bind("<Escape>", lambda event: closeWindow())
-        payee_window.focus_force()
+        current_accounts =  self.main_dashboard.all_banking_data["Account"].unique().tolist()
+        for account in current_accounts:
+            if account not in self.main_dashboard.banking_accounts:
+                self.main_dashboard.banking_accounts.append(account)
+        self.main_dashboard.banking_accounts = sorted(self.main_dashboard.banking_accounts)
 
     def viewOptions(self, new_settings: bool = True) -> None:
         """
@@ -2946,11 +2365,198 @@ class DashboardActions:
             # If user moves focus away, cancel editing
             dropdown.bind("<FocusOut>", cancelEdit)
 
-    def addInvestmentAccount(self) -> None:
-        self
+    def manageItems(self, item_type):
+        """General function to manage (add, modify, delete) items such as categories or accounts."""
+
+        def loadItems():
+            # Clear and repopulate the listbox
+            listbox.delete(0, tk.END)
+            for item in sorted(item_list, key=str.lower):
+                listbox.insert(tk.END, item)
+
+        def addItem():
+            new_item = simpledialog.askstring(f"Add {item_type}", f"Enter new {item_type}:")
+            if new_item and new_item not in item_list:
+                item_list.append(new_item)
+                listbox.insert(tk.END, new_item)
+            saveItems()
+
+        def modifyItem():
+            selected_index = listbox.curselection()
+            if selected_index:
+                old_item = listbox.get(selected_index)
+                new_item = simpledialog.askstring("Modify Item", "Enter new name:", initialvalue=old_item)
+                if new_item and new_item not in item_list:
+                    selected_value = listbox.get(selected_index)
+                    item_list.remove(selected_value)
+                    item_list.append(new_item)
+                    listbox.delete(selected_index)
+                    listbox.insert(selected_index, new_item)
+                saveItems()
+
+        def deleteItem():
+            selected_index = listbox.curselection()
+            if selected_index:
+                confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this item?")
+                if confirm:
+                    selected_value = listbox.get(selected_index)
+                    if selected_value in item_list:
+                        item_list.remove(selected_value)
+                    listbox.delete(selected_index)
+                    saveItems()
+                self.manageItems(item_type)
+
+        def saveItems():
+            # Call functions to populate the listbox
+            if item_type == 'Categories':
+                file = self.main_dashboard.banking_categories_file
+
+                with open(file, "w") as f:
+                    for item in item_list:
+                        f.write(item + "\n")
+
+                self.getCategories()
+
+            elif item_type == 'Assets':
+                file = self.main_dashboard.investment_assets_file
+
+                with open(file, "w") as f:
+                    for item in item_list:
+                        f.write(item + "\n")
+
+                self.getAssets()
+
+            if item_type == 'Payees':
+                file = self.main_dashboard.payee_file
+
+                with open(file, "w") as f:
+                    for item in item_list:
+                        f.write(item + "\n")
+
+                self.getPayees()
+
+            if item_type == 'Actions':
+                file = self.main_dashboard.investment_actions_file
+
+                with open(file, "w") as f:
+                    for item in item_list:
+                        f.write(item + "\n")
+
+                self.getInvestmentActions()
+
+            if item_type == 'Banking Accounts':
+                self.main_dashboard.banking_accounts = sorted(item_list, key=str.lower)
+                
+                self.getBankingAccounts()
+
+            if item_type == 'Investment Accounts':
+                self.main_dashboard.investment_accounts = sorted(item_list, key=str.lower)
+                
+                self.getInvestmentAccounts()
+
+        def closeWindow(event=None):
+            manage_window.destroy()
+
+        # Create a Toplevel window anchored relative to the main dashboard
+        manage_window = tk.Toplevel(self.main_dashboard)
+        manage_window.title("Manage Items")
+        
+        # Set window dimensions and position
+        window_height, window_width = 400, 300
+        Windows.openRelativeWindow(
+            manage_window, 
+            main_width=self.main_dashboard.winfo_x(),
+            main_height=self.main_dashboard.winfo_y(),
+            width=window_width, 
+            height=window_height
+        )
+        
+        # Title label
+
+        if item_type == 'Categories' and self.main_dashboard.table_to_display == 'Investments':
+            item_type = 'Assets'
+
+        ttk.Label(
+            manage_window, 
+            text=item_type,
+            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold")
+        ).pack(pady=5)
+
+        # Frame for the Listbox and scrollbar
+        frame = tk.Frame(manage_window, bg=StyleConfig.BG_COLOR)
+        frame.pack(fill="both", expand=True, padx=10, pady=5)
     
-    def addBankingAccount(self) -> None:
-        self
+        # Create a Listbox to display existing values
+        listbox = tk.Listbox(frame, height=15, bg=StyleConfig.BG_COLOR)
+        listbox.pack(side=tk.LEFT, fill="both", expand=True)
+    
+        # Attach a vertical scrollbar to the listbox
+        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill="y")
+        listbox.config(yscrollcommand=scrollbar.set)
+
+        # Frame to hold the Add / Modify / Delete / Exit buttons
+        button_frame = tk.Frame(manage_window, bg=StyleConfig.BG_COLOR)
+        button_frame.pack(pady=10)
+
+        # Button styling from StyleConfig
+        button_attributes = {
+            "bg": StyleConfig.BUTTON_COLOR,
+            "fg": StyleConfig.TEXT_COLOR,
+            "font": (StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE),
+            "relief": StyleConfig.BUTTON_STYLE,
+            "padx": StyleConfig.BUTTON_PADDING,
+            "pady": StyleConfig.BUTTON_PADDING,
+            "width": 10  # Ensure a consistent width for each button
+        }
+
+        # Create the buttons
+        add_button = tk.Button(button_frame, text="Add", command=addItem, **button_attributes)
+        modify_button = tk.Button(button_frame, text="Modify", command=modifyItem, **button_attributes)
+        delete_button = tk.Button(button_frame, text="Delete", command=deleteItem, **button_attributes)
+        exit_button = tk.Button(button_frame, text="Exit", command=closeWindow, **button_attributes)
+    
+        # Lay out buttons: Add, Modify, Delete in the first row, Exit in the second row
+        add_button.grid(row=0, column=0, padx=5, pady=5)
+        modify_button.grid(row=0, column=1, padx=5, pady=5)
+        delete_button.grid(row=0, column=2, padx=5, pady=5)
+        exit_button.grid(row=1, column=0, columnspan=3, padx=5, pady=5)
+
+        # Call functions to populate the listbox
+        if item_type == 'Categories':
+            self.getCategories()
+            item_list = self.main_dashboard.categories
+            
+        elif item_type == 'Assets':
+            self.getAssets()
+            item_list = self.main_dashboard.assets
+
+        elif item_type == 'Payees':
+            self.getPayees()
+            item_list = self.main_dashboard.payees
+
+        elif item_type == 'Actions':
+            self.getInvestmentActions()
+            item_list = self.main_dashboard.actions
+
+        elif item_type == 'Banking Accounts':
+            self.getBankingAccounts()
+            item_list = self.main_dashboard.banking_accounts
+
+        elif item_type == 'Investment Accounts':
+            self.getInvestmentAccounts()
+            item_list = self.main_dashboard.investment_accounts
+
+        item_list = sorted(item_list)
+
+        # Populate the listbox
+        loadItems()
+
+        # Bind Escape key to close the window, and give focus to it
+        manage_window.bind("<Escape>", lambda event: closeWindow())
+        manage_window.bind("<Return>", lambda event: closeWindow())
+        manage_window.bind("<Delete>", lambda event: deleteItem())
+        manage_window.focus_force()
 
     def displayReports(self):
         #TODO
@@ -3313,13 +2919,9 @@ class Dashboard(tk.Frame):
         self.investment_assets_file   = os.path.join(os.path.dirname(__file__), "Investments_Assets.txt")
         self.investment_actions_file  = os.path.join(os.path.dirname(__file__), "Investments_Actions.txt")
         self.payee_file = os.path.join(os.path.dirname(__file__), "Payees.txt")
-        self.ui_actions.getCategories()
-        self.ui_actions.getAssets()
-        self.ui_actions.getInvestmentActions()
-        self.ui_actions.getPayees()
 
-        self.banking_accounts = self.ui_actions.getBankingAccounts()
-        self.investment_accounts = self.ui_actions.getInvestmentAccounts()
+        self.banking_accounts = []
+        self.investment_accounts = []
 
         # Delay loading the saved file until UI is ready
         self.after(500, self.ui_actions.loadSaveFile)
@@ -3386,7 +2988,7 @@ class Dashboard(tk.Frame):
     
         Delegates the action to ui_actions.addInvestmentAccount().
         """
-        self.ui_actions.addInvestmentAccount()
+        self.ui_actions.manageItems('Investment Accounts')
 
     def addBankingAccount(self) -> None:
         """
@@ -3394,7 +2996,7 @@ class Dashboard(tk.Frame):
     
         Delegates the action to ui_actions.addBankingAccount().
         """
-        self.ui_actions.addBankingAccount()
+        self.ui_actions.manageItems('Banking Accounts')
 
     def trainClassifier(self) -> None:
         payee_classifier, category_classifier = Classifier.trainPayeeAndCategoryClassifier(self.all_banking_data) 

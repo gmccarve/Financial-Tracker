@@ -63,9 +63,10 @@ Rocket City Veterinary
 Spotify
 Starbucks
 State Farm
+TEST
 Taco Bell
 Target
-Tax Refund
+Taste of Maine
 Texaco
 The Home Depot
 Tire Discounters
@@ -79,4 +80,3 @@ Walmart
 Wayfair
 Woodsprings Suites
 Wow
-Taste of Maine

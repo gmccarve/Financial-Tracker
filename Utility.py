@@ -13,6 +13,120 @@ from sklearn.ensemble import RandomForestClassifier
 
 from StyleConfig import StyleConfig
 
+class DataFrameProcessor:
+    @staticmethod
+    def getDataFrameIndex(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Ensures that the 'Index' column exists and is correctly set as the first column.
+
+        If the 'Index' column does not exist, it is created from the DataFrame's index.
+        If it already exists, it is removed and reinserted as the first column.
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame.
+
+        Returns:
+        - pd.DataFrame: Updated DataFrame with 'Index' as the first column.
+        """
+        df = df.reset_index(drop=True)  # Reset index to start fresh
+        if 'No.' in df.columns:
+            df = df.drop(columns=['No.'])
+        df.insert(0, 'No.', df.index)
+        return df
+    @staticmethod 
+    def convertCurrency(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Converts the 'Payment', 'Deposit', and 'Balance' columns in a DataFrame to cents (int) format
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame containing a 'Date' column.
+
+        Returns:
+        - pd.DataFrame: Updated DataFrame
+        """
+        for col in ['Payment', 'Deposit', 'Balance']:
+            if col in df.columns:
+                df[col] = df[col].astype(str)  # Ensure strings for processing
+                
+                # Remove dollar signs, commas, and handle negative parentheses
+                df[col] = df[col].replace({'\\$': '', ',': '', '\\(': '-', '\\)': ''}, regex=True)
+                
+                # Convert to numeric, replace NaNs with 0, multiply by 100, and round to int
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                df[col] = (df[col] * 100).round().astype(int)
+
+        return df
+    @staticmethod 
+    def convertToDatetime(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Converts the 'Date' column in a DataFrame to datetime format, ensuring proper formatting.
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame containing a 'Date' column.
+
+        Returns:
+        - pd.DataFrame: Updated DataFrame with the 'Date' column converted to datetime format.
+        """
+        try:
+            df['Date'] = pd.to_datetime(df['Date'], dayfirst=False, format='mixed').dt.date
+        except KeyError:
+            pass
+        return df
+    @staticmethod 
+    def sortDataFrame(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Sorts a DataFrame in ascending order based on 'Date' column.
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame.
+
+        Returns:
+        - pd.DataFrame: Sorted DataFrame with a reset index.
+        """
+        df = df.sort_values(by=['Date'], ascending=True, inplace=False).reset_index(drop=True) 
+        return df
+    @staticmethod 
+    def getStartEndDates(df: pd.DataFrame) -> Tuple[pd.Timestamp, pd.Timestamp]:
+        """
+        Retrieves the earliest and latest dates from the 'Date' column of the DataFrame.
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame containing a 'Date' column.
+
+        Returns:
+        - Tuple[pd.Timestamp, pd.Timestamp]: A tuple containing the earliest and latest dates.
+        """
+        return df['Date'].min(), df['Date'].max()
+    @staticmethod 
+    def getMinMaxVals(df: pd.DataFrame) -> Tuple[float, float]:
+        """
+        Computes the minimum and maximum values of the 'Amount' column in the DataFrame.
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame containing an 'Amount' column.
+
+        Returns:
+        - Tuple[float, float]: A tuple containing (min_value, max_value) from the 'Amount' column.
+        """
+        return df['Amount'].min(), df['Amount'].max()
+    @staticmethod 
+    def findMismatchedCategories( df: pd.DataFrame, df_type: str) -> pd.DataFrame:
+        """
+        Identifies and marks categories that are not found in the predefined category list.
+
+        Categories that are not in the list will be prefixed with an asterisk (*).
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame containing a 'Category' column.
+        - df_type (str): The type of DataFrame ('inc' for income, 'exp' for expenses).
+
+        Returns:
+        - pd.DataFrame: Updated DataFrame with mismatched categories marked with an asterisk (*).
+        """
+        cat_list, _ = Utility.getCategoryTypes(df_type)
+        df['Category'] = df['Category'].astype(str).apply(lambda x: f"*{x}" if x.strip() not in map(str.strip, map(str, cat_list)) else x)
+        return df
+
 class Utility:
     @staticmethod
     def getCategoryTypes(name: str) -> Tuple[List[str], str]:

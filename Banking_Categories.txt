@@ -1,4 +1,3 @@
-
 Airfare
 Bonus
 Books & Magazines
@@ -65,8 +64,6 @@ Student Loans
 Subscriptions
 Tax Refund
 Taxes
-Tolls
-Transfer from Checking to Savings
 Transfer from Savings to Checking
 Transportation - Gas
 Transportation - Public Transit
@@ -80,3 +77,4 @@ Utilities - Gas
 Utilities - Internet/WiFi
 Utilities - Water
 Work
+test
