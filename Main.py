@@ -22,7 +22,7 @@ from Dashboard import Dashboard
 from StyleConfig import StyleConfig
 
 pd.set_option('display.max_columns', None)
-#pd.set_option('display.max_rows', None)
+pd.set_option('display.max_rows', None)
 pd.set_option('display.float_format','{:.2f}'.format)
 
 class FinanceTracker(tk.Tk):

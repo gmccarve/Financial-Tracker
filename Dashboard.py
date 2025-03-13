@@ -972,7 +972,8 @@ class DashboardUI(tk.Frame):
     def _bindTableEvents(self):
         """Binds events to the Treeview widget."""
         # Bind double-click to edit cell
-        self.tree.bind("<Double-1>",  self.actions_manager.editCell)
+        self.tree.bind("<Double-1>", self.actions_manager.editCell)
+        self.tree.bind("<Button-3>", lambda event: self.actions_manager.showRightClickTableMenu(event))
 
     def showTransactionTable(self, data):
         """Displays the transaction table (Treeview) in the content area."""
@@ -1092,6 +1093,12 @@ class DashboardActions:
         self.main_dashboard = main_dashboard
         self.widget_dashboard = widget_dashboard
 
+    def getCurrentDF(self):
+        if self.main_dashboard.table_to_display == 'Banking':
+            return self.main_dashboard.all_banking_data
+        elif self.main_dashboard.table_to_display == 'Investment':
+            return self.main_dashboard.all_investment_data 
+
     ########################################################
     # Modify Entries
     ########################################################
@@ -1102,8 +1109,6 @@ class DashboardActions:
         This method calls the TransactionManager to display a form for creating a new transaction.
         Once submitted, the new transaction is appended to the main_dashboard's data.
         """
-        # Hand off 'self' (the actions manager) and 'main_dashboard' to the TransactionManager
-        # with edit=False, meaning we are adding a new transaction rather than editing an existing one.
         TransactionManager.openTransactionWindow(self, self.main_dashboard, edit=False)
 
     def editTransaction(self) -> None:
@@ -1114,8 +1119,6 @@ class DashboardActions:
         selected transaction in the Treeview. Once submitted, the changes are saved back to
         the main_dashboard's data.
         """
-        # Hand off 'self' (the actions manager) and 'main_dashboard' to the TransactionManager
-        # with edit=True, indicating we want to edit a transaction that is currently selected.
         TransactionManager.openTransactionWindow(self, self.main_dashboard, edit=True)
 
     def deleteTransaction(self) -> None:
@@ -1125,8 +1128,6 @@ class DashboardActions:
         This method calls the TransactionManager to remove the selected transaction(s)
         from the main_dashboard's data, and then refreshes the UI to reflect the changes.
         """
-        # Hand off 'self' (the actions manager) and 'main_dashboard' to the TransactionManager
-        # for deleting whichever transaction(s) the user has selected in the UI.
         TransactionManager.deleteTransaction(self, self.main_dashboard) 
 
     ########################################################
@@ -1135,70 +1136,109 @@ class DashboardActions:
     def openData(self) -> None:
         """
         Opens one or more data files and merges the results into the main Dashboard's DataFrame.
-    
-        Steps:
-        1. Invokes DataManager.openData() to present a file dialog for CSV or PKL files.
-        2. If the user chooses a PKL file, sets the main_dashboard's save_file attribute and calls loadSaveFile().
-        3. Otherwise, if CSV files are chosen, reads each CSV, processes it into a DataFrame, and appends it to
-           main_dashboard.all_banking_data. 
-        4. Updates the UI to reflect newly loaded transactions.
-    
-        Returns:
-        -------
-        None
-            This function modifies the application's data (main_dashboard.all_banking_data) 
-            and refreshes the UI in-place, without returning anything.
         """
-        # 1) Prompt user for file(s)
         pkl_file, csv_files = DataManager.openData()
-        
-        # 2) If user selected a PKL file, handle loading that file
+
         if pkl_file:
-            self.main_dashboard.master.save_file = pkl_file
-            self.loadSaveFile()  # Load and display data from the PKL
+            self.loadPklFile(pkl_file)
             return
-        
-        # 3) Otherwise, if user selected one or more CSV files, parse and append them
+
         if csv_files:
-            parsed_data = []
-            for csv_path in csv_files:
-                
-                # Read the CSV into a DataFrame
-                df = DataManager.readCSV(csv_path)
-                if not df.empty:
-                    account_name = os.path.basename(csv_path).split(".")[0]
-                    
-                    # Convert DataFrame to a standardized format
-                    parsed_df, case = DataManager.parseNewDF(self.main_dashboard, df, account_name)
-                    parsed_data.append(parsed_df)
-                    
-                    # Track the 'case' or data pattern for this account
-                    self.main_dashboard.account_cases[os.path.basename(csv_path)] = case
-                    
-                    # Check if the account already exists in the DataFrame
-                    if account_name not in self.main_dashboard.initial_account_balances["Account"].values:
-                        new_row = pd.DataFrame({
-                            "Account": [account_name],
-                            "Initial Date": [self.main_dashboard.day_one],
-                            "Initial Value": [0]
-                        })
-                        self.main_dashboard.initial_account_balances = pd.concat(
-                            [self.main_dashboard.initial_account_balances, new_row],
-                            ignore_index=True
-                        )
+            self.loadCsvFiles(csv_files)
+
+    def loadPklFile(self, pkl_file: str) -> None:
+        """Handles loading a .pkl file."""
+        self.main_dashboard.master.save_file = pkl_file
+        self.loadSaveFile()  # Load and display data from the PKL
+
+    def loadCsvFiles(self, csv_files: list) -> None:
+        """Handles loading and processing CSV files."""
+        parsed_data = []
+        for csv_path in csv_files:
+            df = DataManager.readCSV(csv_path)
+            if not df.empty:
+                account_name = os.path.basename(csv_path).split(".")[0]
+
+                # Convert DataFrame to a standardized format
+                parsed_df, case = DataManager.parseNewDF(self.main_dashboard, df, account_name)
+                parsed_df = DataFrameProcessor.convertToDatetime(parsed_df)
+
+                # Check for existing data in the DataFrame
+                leftover_df = self.checkAndMergeData(parsed_df, account_name)
+
+                parsed_data.append(leftover_df)
+
+        if parsed_data:
+            self.mergeCSVData(parsed_data)
+
+    def checkAndMergeData(self, parsed_df: pd.DataFrame, account_name: str) -> None:
+        """
+        Checks if the account already exists in the DataFrame, and prompts the user if there is existing data.
+        """
+        if self.main_dashboard.table_to_display == 'Banking':
+            df_to_compare = self.main_dashboard.all_banking_data.copy()
+            headers_to_compare = ["Description", "Date", "Payment", "Deposit"]
             
-            # Merge all newly read CSV data into main_dashboard.all_banking_data
-            if parsed_data:
-                final_df = pd.concat(parsed_data, ignore_index=True)
-                self.main_dashboard.all_banking_data = pd.concat(
-                    [self.main_dashboard.all_banking_data, final_df],
-                    ignore_index=True
-                )
-                self.main_dashboard.all_banking_data = DataFrameProcessor.getDataFrameIndex(self.main_dashboard.all_banking_data)
-                self.updateTable(self.main_dashboard.all_banking_data)
+        elif self.main_dashboard.table_to_display == 'Investments':
+            df_to_compare = self.main_dashboard.all_investment_data.copy()
+            headers_to_compare = ["Date", "Action", "Asset", "Symbol", "Units"]
+            
+        all_headers = df_to_compare.columns
+
+        if account_name in df_to_compare["Account"].values:
+
+            df_to_compare = df_to_compare[df_to_compare["Account"] == account_name]
+
+            df_to_compare = DataFrameProcessor.getDataFrameIndex(df_to_compare)
+            parsed_df = DataFrameProcessor.getDataFrameIndex(parsed_df)
+
+            df_to_compare = DataFrameProcessor.convertToDatetime(df_to_compare)
+            parsed_df = DataFrameProcessor.convertToDatetime(parsed_df)
+
+            df_to_compare = df_to_compare[headers_to_compare]
+            parsed_df = parsed_df[headers_to_compare]
+
+            merged_data = df_to_compare.merge(parsed_df, on=headers_to_compare, how="right", indicator=True)
+
+            new_data = (merged_data['_merge'] == 'right_only').tolist()
+
+            new_rows = merged_data[new_data].drop(columns='_merge').reset_index()
+
+            for column in all_headers:
+                if column not in new_rows.columns:
+                    if column == 'Balance':
+                        new_rows[column] = 0
+                    elif column == 'Account':
+                        new_rows[column] = account_name
+                    else:
+                        new_rows[column] = ''
+            
+            new_rows = new_rows[all_headers].fillna('')
+
+            if not merged_data.empty:
+                return new_rows
+            else:
+                return pd.DataFrame(columns=all_headers)
         else:
-            # User cancelled or no valid files selected
-            pass
+            return parsed_df
+
+    def mergeCSVData(self, parsed_data: list) -> None:
+        """Merges all newly read CSV data into the main DataFrame."""
+        if self.main_dashboard.table_to_display == 'Banking':
+            df_to_update = self.main_dashboard.all_banking_data
+        elif self.main_dashboard.table_to_display == 'Investments':
+            df_to_update = self.main_dashboard.all_investment_data
+
+        for df in parsed_data:
+            print (df)
+            df_to_update = pd.concat([df_to_update, df], ignore_index=True)
+
+        if self.main_dashboard.table_to_display == 'Banking':
+            self.main_dashboard.all_banking_data = df_to_update
+            self.updateTable(self.main_dashboard.all_banking_data)
+        elif self.main_dashboard.table_to_display == 'Investments':
+            self.main_dashboard.all_investment_data = df_to_update
+            self.updateTable(self.main_dashboard.all_investment_data)
 
     def exportData(self, event: tk.Event | None = None) -> None:
         """
@@ -1419,6 +1459,8 @@ class DashboardActions:
             colors=[StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2]
         )
 
+        print (df)
+
         if self.main_dashboard.table_to_display == 'Banking':
             self.updateBalancesInDataFrame() 
         self.updateSideBar(df)
@@ -1544,6 +1586,7 @@ class DashboardActions:
         self.updateTable(new_df)
     
     def trackBankBalances(self) -> None:
+        #TODO Make less monolithic
         """
         Opens a Toplevel window to manually review and update the latest balance for each banking account.
 
@@ -1790,6 +1833,7 @@ class DashboardActions:
         self.updateSideBar(self.main_dashboard.all_banking_data)
         
     def calculateBalancesPerType(self, df: pd.DataFrame, account: str, given_date: str, given_balance: float) -> pd.DataFrame:
+        #TODO Make less monolithic
         """
         Calculates balances for all transactions in an account based on its type, given a known balance on a specific date.
     
@@ -1803,6 +1847,8 @@ class DashboardActions:
         Returns:
             pd.DataFrame: Updated DataFrame with recalculated balances.
         """
+
+        #TODO Fix for non-consecutive data
         
         # Ensure the 'Date' column is in datetime format
         df["Date"] = pd.to_datetime(df["Date"])
@@ -1881,6 +1927,56 @@ class DashboardActions:
         df.update(account_df)
     
         return df, last_balance
+    
+    def showRightClickTableMenu(self, event=None):
+        """Shows the context menu based on the column clicked."""
+        # Get the column that was clicked
+
+        # Check if the click happened in the header region
+        region = self.widget_dashboard.tree.identify_region(event.x, event.y)
+
+        # If the region is not 'heading', do nothing (i.e., the click is on a cell)
+        if region != "heading":
+            return  # Skip displaying the menu if the click was in a cell
+
+        col_id = self.widget_dashboard.tree.identify_column(event.x)
+        col_name = self.widget_dashboard.tree.heading(col_id, "text")
+        
+        menu = tk.Menu(self.main_dashboard, tearoff=0)
+
+        # Determine the menu options based on the column clicked
+        if col_name == 'Date':
+            menu.add_command(label="Show last 30 days", command=lambda: self.filterTableByDate(delta=30))
+            menu.add_command(label="Show last 60 days", command=lambda: self.filterTableByDate(delta=60))
+            menu.add_command(label="Show last 90 days", command=lambda: self.filterTableByDate(delta=90))
+            menu.add_command(label="Show last 180 days", command=lambda: self.filterTableByDate(delta=180))
+            menu.add_command(label="Show last 365 days", command=lambda: self.filterTableByDate(delta=365))
+
+        # Display the context menu at the mouse cursor position
+        menu.post(event.x_root, event.y_root)
+
+    def filterTableByDate(self, delta=30) -> None:
+        """
+        Filters the DataFrame to only include rows where the 'Date' column is within 
+        the past `delta` number of days from today.
+
+        Parameters:
+        - delta (int): The number of days in the past to filter by.
+
+        Returns:
+        - None
+        """
+        if self.main_dashboard.table_to_display == 'Banking':
+            df_to_filter = self.main_dashboard.all_banking_data
+        elif self.main_dashboard.table_to_display == 'Investments':
+            df_to_filter = self.main_dashboard.all_investment_data
+
+        threshold_date = datetime.today() - timedelta(days=delta)
+
+        # Filter the DataFrame to include only rows where 'Date' is >= threshold_date
+        df_to_filter = df_to_filter[df_to_filter['Date'] >= threshold_date]
+
+        self.updateTable(df_to_filter)
     
     def editCell(self, event: tk.Event | None = None) -> None:
         """

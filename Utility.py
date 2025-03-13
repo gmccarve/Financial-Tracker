@@ -18,6 +18,7 @@ from sklearn.ensemble import RandomForestClassifier
 from StyleConfig import StyleConfig
 
 class DataFrameProcessor:
+    
     @staticmethod
     def getDataFrameIndex(df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -37,6 +38,7 @@ class DataFrameProcessor:
             df = df.drop(columns=['No.'])
         df.insert(0, 'No.', df.index)
         return df
+    
     @staticmethod 
     def convertCurrency(df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -60,6 +62,7 @@ class DataFrameProcessor:
                 df[col] = (df[col] * 100).round().astype(int)
 
         return df
+    
     @staticmethod 
     def convertToDatetime(df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -76,6 +79,7 @@ class DataFrameProcessor:
         except KeyError:
             pass
         return df
+    
     @staticmethod 
     def sortDataFrame(df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -89,6 +93,7 @@ class DataFrameProcessor:
         """
         df = df.sort_values(by=['Date'], ascending=True, inplace=False).reset_index(drop=True) 
         return df
+    
     @staticmethod 
     def getStartEndDates(df: pd.DataFrame) -> Tuple[pd.Timestamp, pd.Timestamp]:
         """
@@ -101,6 +106,7 @@ class DataFrameProcessor:
         - Tuple[pd.Timestamp, pd.Timestamp]: A tuple containing the earliest and latest dates.
         """
         return df['Date'].min(), df['Date'].max()
+    
     @staticmethod 
     def getMinMaxVals(df: pd.DataFrame) -> Tuple[float, float]:
         """
@@ -113,6 +119,7 @@ class DataFrameProcessor:
         - Tuple[float, float]: A tuple containing (min_value, max_value) from the 'Amount' column.
         """
         return df['Amount'].min(), df['Amount'].max()
+    
     @staticmethod 
     def findMismatchedCategories( df: pd.DataFrame, df_type: str) -> pd.DataFrame:
         """
