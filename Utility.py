@@ -91,6 +91,7 @@ class DataFrameProcessor:
         Returns:
         - pd.DataFrame: Sorted DataFrame with a reset index.
         """
+        df = df.sort_values(by=['Account'], ascending=True, inplace=False).reset_index(drop=True) 
         df = df.sort_values(by=['Date'], ascending=True, inplace=False).reset_index(drop=True) 
         return df
     

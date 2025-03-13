@@ -46,7 +46,7 @@ class DataManager:
             pd.DataFrame: DataFrame containing the transaction data or an empty DataFrame if loading failed.
         """
         try:
-            df = pd.read_csv(file_path).fillna(0)
+            df = pd.read_csv(file_path).fillna('')
             return df
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open file: {e}")
@@ -67,7 +67,7 @@ class DataManager:
         if not file_paths:
             return None, []
         
-        csv_files, pkl_file = [], None
+        pkl_file, csv_files = None, []
         
         # Separate CSVs from PKL
         for path in file_paths:
@@ -82,7 +82,7 @@ class DataManager:
         return pkl_file, csv_files
     
     @staticmethod     
-    def parseNewDF(dashboard: "Dashboard", df:pd.DataFrame, account_name: str) -> pd.DataFrame:
+    def parseNewDF(dashboard: "Dashboard", df:pd.DataFrame, account_name: str) -> Tuple[pd.DataFrame, str]:
         """
         Parses and formats new financial data according to account type and structure.
         
@@ -104,22 +104,17 @@ class DataManager:
 
         # Reorder the DataFrame to match expected headers
         df = df[expected_headers]
-        
-        # Convert to datetime and sort
-        df = DataFrameProcessor.convertToDatetime(df)
-        df = DataFrameProcessor.sortDataFrame(df)
 
-        # Assign account name and categorize based on financial data
         df['Account'] = account_name
         df['Balance'] = 0
-
-        # Final adjustments before returning
+        
+        # Convert dataframe for consistency
+        df = DataFrameProcessor.convertToDatetime(df)
+        df = DataFrameProcessor.sortDataFrame(df)
         df = DataFrameProcessor.getDataFrameIndex(df)
         df = DataFrameProcessor.convertCurrency(df)
 
         case = DataManager.categorizeAccount(df)
-
-        print (case)
         
         return df, case
 
@@ -153,7 +148,7 @@ class DataManager:
             ):
             return "Type 3"
         elif (
-            (df["Payment"] >= -999999.00).all() and 
+            (df["Payment"] >= -9999999.00).all() and 
             (df["Deposit"] == 0.00).all()
             ):
             return "Type 4"
@@ -182,21 +177,9 @@ class DataManager:
 
         df.columns = [header_mapping.get(col, col) for col in df.columns]
         return df
-        
-    @staticmethod     
-    def updateData() -> None:
-        """
-        Updates the financial data based on CSV files.
-    
-        This method triggers `selectFilesAndFolders` with `update=True`,
-        ensuring that the data is refreshed with the latest available files.
-        """
-        #self.selectFilesAndFolders(update=True)
-        #TODO Add functionality
-        return
     
     @staticmethod
-    def compareOldAndNewDF(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
+    def findNewEntries(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
         """
         Compares two DataFrames and returns rows in df1 that are not in df2.
         
@@ -207,14 +190,10 @@ class DataManager:
         Returns:
             pd.DataFrame: Rows in df1 that are not in df2.
         """
-        df1 = df1.drop(columns=['Category', 'Payee', 'Note', 'No.'], errors='ignore')
-        df1['Date'] = pd.to_datetime(df1['Date'], dayfirst=False, format='mixed').dt.date
-        df2 = df2.drop(columns=[col for col in ['Category', 'Index'] if col in df2.columns], errors='ignore')
-
         return df1.loc[~df1.apply(tuple, axis=1).isin(df2.apply(tuple, axis=1))]
     
     @staticmethod
-    def addNewValuesToDF(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
+    def addNewEntries(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
         """
         Merges two DataFrames by appending rows from df2 to df1 while ensuring unique entries.
         
@@ -337,8 +316,6 @@ class DataManager:
             initial_balances = data["Initial Balances"]
             account_types = data["Account Types"]
 
-            #banking_data = pd.read_excel("C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/2025.xlsx", sheet_name="Banking Transactions")
-
             # Ensure that the data is valid
             if banking_data.empty and investment_data.empty:
                 messagebox.showwarning("Warning", "The data in the file is empty.")
@@ -363,7 +340,12 @@ class DataManager:
         
         except Exception as e:
             messagebox.showerror("Load Error", f"Failed to load data: {e}")
-            return pd.DataFrame(), pd.DataFrame(), {}, {}    
+            return pd.DataFrame(), pd.DataFrame(), {}, {}   
+
+    @staticmethod
+    def convertStrToDate(date_str: str) -> date:
+        split_str = date_str.split("-")
+        return date(int(split_str[0]), int(split_str[1]), int(split_str[2])) 
 
 class TransactionManager:
     @staticmethod
@@ -515,7 +497,8 @@ class TransactionManager:
         """Handles adding a new transaction."""
         df_to_update = pd.concat([df_to_update, new_df], ignore_index=True)
         df_to_update = DataFrameProcessor.getDataFrameIndex(df_to_update)
-        dashboard.ui_actions.updateTable(df_to_update)
+        
+        dashboard.updateCurrentDF(df_to_update)
         return True
 
     @staticmethod
@@ -1117,6 +1100,14 @@ class DashboardActions:
             return self.main_dashboard.all_banking_data
         elif self.main_dashboard.table_to_display == 'Investment':
             return self.main_dashboard.all_investment_data 
+        
+    def updateCurrentDF(self, df):
+        if self.main_dashboard.table_to_display == 'Banking':
+            self.main_dashboard.all_banking_data = df
+        elif self.main_dashboard.table_to_display == 'Investment':
+            self.main_dashboard.all_investment_data = df
+
+        self.finalizeDataUpdate(df)
 
     ########################################################
     # Modify Entries
@@ -1188,9 +1179,7 @@ class DashboardActions:
 
                 if not df_to_check.empty:
                     # Check for existing data in the DataFrame
-                    leftover_df = self.checkAndMergeData(parsed_df, account_name)
-
-                    parsed_data.append(leftover_df)
+                    self.checkAndMergeData(parsed_df, account_name)
 
                 else:
                     if self.main_dashboard.table_to_display == 'Banking':
@@ -1200,76 +1189,58 @@ class DashboardActions:
 
                     parsed_data.append(pd.DataFrame(columns=parsed_df.columns))
 
-        if parsed_data:
-            self.mergeCSVData(parsed_data)
-
     def checkAndMergeData(self, parsed_df: pd.DataFrame, account_name: str) -> None:
-        """
-        Checks if the account already exists in the DataFrame, and prompts the user if there is existing data.
-        """
+
         if self.main_dashboard.table_to_display == 'Banking':
-            df_to_compare = self.main_dashboard.all_banking_data.copy()
             headers_to_compare = ["Description", "Date", "Payment", "Deposit"]
             
         elif self.main_dashboard.table_to_display == 'Investments':
-            df_to_compare = self.main_dashboard.all_investment_data.copy()
             headers_to_compare = ["Date", "Action", "Asset", "Symbol", "Units"]
-            
-        all_headers = df_to_compare.columns
+
+        df_to_compare = self.getCurrentDF()
+        df_to_compare = df_to_compare.copy()
 
         if account_name in df_to_compare["Account"].values:
 
             df_to_compare = df_to_compare[df_to_compare["Account"] == account_name]
 
-            df_to_compare = DataFrameProcessor.getDataFrameIndex(df_to_compare)
-            parsed_df = DataFrameProcessor.getDataFrameIndex(parsed_df)
-
             df_to_compare = DataFrameProcessor.convertToDatetime(df_to_compare)
-            parsed_df = DataFrameProcessor.convertToDatetime(parsed_df)
-
             df_to_compare = df_to_compare[headers_to_compare]
+
+            parsed_df = DataFrameProcessor.convertToDatetime(parsed_df)
             parsed_df = parsed_df[headers_to_compare]
 
-            merged_data = df_to_compare.merge(parsed_df, on=headers_to_compare, how="right", indicator=True)
+            new_df = DataManager.findNewEntries(parsed_df, df_to_compare)
 
-            new_data = (merged_data['_merge'] == 'right_only').tolist()
+            if not new_df.empty:
+                self.addNewEntries(new_df, account_name)
 
-            new_rows = merged_data[new_data].drop(columns='_merge').reset_index()
-
-            for column in all_headers:
-                if column not in new_rows.columns:
-                    if column == 'Balance':
-                        new_rows[column] = 0
-                    elif column == 'Account':
-                        new_rows[column] = account_name
-                    else:
-                        new_rows[column] = ''
-            
-            new_rows = new_rows[all_headers].fillna('')
-
-            if not merged_data.empty:
-                return new_rows
-            else:
-                return pd.DataFrame(columns=all_headers)
         else:
-            return parsed_df
+            self.addNewEntries(parsed_df, account_name)
+        
+    def addNewEntries(self, new_df: pd.DataFrame, account_name: str) -> bool:
+        """
 
-    def mergeCSVData(self, parsed_data: list) -> None:
-        """Merges all newly read CSV data into the main DataFrame."""
-        if self.main_dashboard.table_to_display == 'Banking':
-            df_to_update = self.main_dashboard.all_banking_data
-        elif self.main_dashboard.table_to_display == 'Investments':
-            df_to_update = self.main_dashboard.all_investment_data
+        """
 
-        for df in parsed_data:
-            df_to_update = pd.concat([df_to_update, df], ignore_index=True)
+        all_data_df = self.getCurrentDF()
 
-        if self.main_dashboard.table_to_display == 'Banking':
-            self.main_dashboard.all_banking_data = df_to_update
-            self.finalizeDataUpdate(self.main_dashboard.all_banking_data)
-        elif self.main_dashboard.table_to_display == 'Investments':
-            self.main_dashboard.all_investment_data = df_to_update
-            self.finalizeDataUpdate(self.main_dashboard.all_investment_data)
+        all_headers = all_data_df.columns
+
+        for column in all_headers:
+            if column not in new_df.columns:
+                if column == 'Balance':
+                    new_df[column] = 0
+                elif column == 'Account':
+                    new_df[column] = account_name
+                else:
+                    new_df[column] = ''
+        
+        new_df = new_df[all_headers].fillna('')
+
+        all_data_df = DataManager.addNewEntries(all_data_df, new_df)
+
+        self.updateCurrentDF(all_data_df)
 
     def exportData(self, event: tk.Event | None = None) -> None:
         """
@@ -1387,12 +1358,14 @@ class DashboardActions:
         # Ensure proper assignment
         if isinstance(all_banking_data_df, pd.DataFrame):
             self.main_dashboard.all_banking_data = all_banking_data_df.copy()
+            self.main_dashboard.all_banking_data = DataFrameProcessor.sortDataFrame(self.main_dashboard.all_banking_data)
         else:
             self.main_dashboard.all_banking_data = pd.DataFrame()  # Fallback to an empty DataFrame
 
         # Ensure proper assignment
         if isinstance(all_investment_data_df, pd.DataFrame):
             self.main_dashboard.all_investment_data = all_investment_data_df.copy()
+            self.main_dashboard.all_investment_data = DataFrameProcessor.sortDataFrame(self.main_dashboard.all_investment_data)
         else:
             self.main_dashboard.all_investment_data = pd.DataFrame()  # Fallback to an empty DataFrame
     
@@ -1452,7 +1425,8 @@ class DashboardActions:
         # 3) Determine which columns to display
         if self.main_dashboard.table_to_display == 'Banking':
             desired_columns = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-            float_cols = [5, 6, 7]  # Indices that contain monetary data
+            #float_cols = ["Payment", "Deposit", "Balance"]  # Indices that contain monetary data
+            float_cols = [5, 6, 7]
             column_data = self.main_dashboard.banking_column_widths
         else:
             desired_columns = [0, 1, 2, 3, 4, 5, 6, 7]
@@ -1483,8 +1457,7 @@ class DashboardActions:
     
             # Format any float columns as currency
             for idx in float_cols:
-                if idx < len(formatted_row):
-                    formatted_row[idx] = f"${formatted_row[idx] / 100:.2f}"
+                formatted_row[idx] = f"${float(formatted_row[idx]) / 100:.2f}"
                             
             # Keep only the desired columns if specified
             if desired_columns:
@@ -1584,12 +1557,9 @@ class DashboardActions:
 
         if case == 1:
             item = item.split(" $")[0]
-
         if "All" in item:
-            if self.main_dashboard.table_to_display == 'Banking':
-                filtered_df = self.main_dashboard.all_banking_data.copy()
-            elif self.main_dashboard.table_to_display == 'Investments':
-                filtered_df = self.main_dashboard.all_investment_data.copy()
+            filtered_df = self.getCurrentDF()
+
         else:
             if self.main_dashboard.table_to_display == 'Banking':
                 filtered_df = self.main_dashboard.all_banking_data[
@@ -1599,9 +1569,9 @@ class DashboardActions:
                 filtered_df = self.main_dashboard.all_investment_data[
                     self.main_dashboard.all_investment_data[column] == item
                 ].copy()
-    
-        self.updateTable(filtered_df)
-    
+
+        self.updateTable(filtered_df.copy())
+
     def switchAccountView(self, account_type: str) -> None:
         """
         Filters the data displayed based on a specified account type (e.g., "Banking" or "Investments").
@@ -1891,12 +1861,16 @@ class DashboardActions:
         """
 
         #TODO Fix for non-consecutive data
+
+        return pd.DataFrame(), 0
         
         # Ensure the 'Date' column is in datetime format
-        df["Date"] = pd.to_datetime(df["Date"])
+        df = DataFrameProcessor.convertToDatetime(df)
+        given_date = DataManager.convertStrToDate(given_date)
     
         # Filter transactions for the specified account
         account_df = df[df["Account"] == account].copy()
+        account_df = account_df.reset_index()
     
         # Sort transactions by date to ensure proper balance propagation
         account_df = account_df.sort_values(by="Date")
@@ -1919,17 +1893,14 @@ class DashboardActions:
         
         # Set the balance for the known transaction
         account_df.at[reference_idx, "Balance"] = given_balance
+        new_balance = given_balance
 
         # Get account type
         account_type = self.main_dashboard.account_cases[account]
 
-        # A dictionary to keep track of calculated balances
-        #calculated_balances = {reference_idx: given_balance}
-        calculated_balances = {}
-
         # Forward propagate balance for later transactions
-        for idx in account_df.index[account_df.index > reference_idx-1]:
-            prev_balance = calculated_balances.get(idx - 1, given_balance)
+        for idx in range(reference_idx, len(account_df.index), 1):
+            prev_balance = new_balance
             deposit = account_df.at[idx, "Deposit"]
             payment = account_df.at[idx, "Payment"]
     
@@ -1938,46 +1909,19 @@ class DashboardActions:
             elif account_type == "Type 2":
                 new_balance  = prev_balance - payment - deposit  # (+) Payments, (-) Deposit, 0.00 Balance
             elif account_type == "Type 3":
-                new_balance  = prev_balance + deposit - payment  # Normal case
+                new_balance  = prev_balance - payment + deposit  # Normal case
             elif account_type == "Type 4":
                 new_balance  = prev_balance + payment  # Deposits are ignored
             else:
                 return df, 0
-            
-            calculated_balances[idx] = new_balance
 
-        last_balance = new_balance
-           
-        #TODO
-        # Backward propagate balance for earlier transactions
-        for idx in account_df.index[account_df.index < reference_idx][::-1]:
-            next_balance = calculated_balances.get(idx, given_balance)
-            deposit = account_df.at[idx, "Deposit"]
-            payment = account_df.at[idx, "Payment"]
-            print (idx, next_balance, deposit, payment)
-    
-            if account_type == "Type 1":
-                new_balance  = next_balance - payment - deposit  # (-) Payments, (+) Deposit, 0.00 Balance
-            elif account_type == "Type 2":
-                new_balance  = next_balance + payment + deposit  # (+) Payments, (-) Deposit, 0.00 Balance
-            elif account_type == "Type 3":
-                new_balance  = next_balance - deposit + payment  # Normal case
-            elif account_type == "Type 4":
-                new_balance  = next_balance - payment  # Deposits are ignored
-            else:
-                return df, 0
-            
-            calculated_balances[idx] = new_balance
-        
-        # Update the DataFrame with the calculated balances
-        for idx, balance in calculated_balances.items():
-            account_df.at[idx, "Balance"] = balance
 
         # Merge updated balances back into the original DataFrame
         df.update(account_df)
     
         #return df, calculated_balances.keys()[-1]
-        return df, last_balance
+        #return df, last_balance
+        return pd.DataFrame(), 0
     
     def showRightClickTableMenu(self, event=None):
         """Shows the context menu based on the column clicked."""
@@ -3254,7 +3198,7 @@ class Dashboard(tk.Frame):
         self.investment_accounts = []
 
         # Delay loading the saved file until UI is ready
-        #self.after(500, self.ui_actions.loadSaveFile)
+        self.after(500, self.ui_actions.loadSaveFile)
         
     def openData(self) -> None:
         """
