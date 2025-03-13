@@ -53,7 +53,7 @@ class DataManager:
             return pd.DataFrame() 
                
     @staticmethod 
-    def openData() -> Tuple[str, List[str]]:
+    def parseDataFileNames() -> Tuple[str, List[str]]:
         """
         Opens a file dialog for .csv and .pkl files, allowing the user to choose multiple files.
         
@@ -106,15 +106,11 @@ class DataManager:
         df = df[expected_headers]
 
         df['Account'] = account_name
-        df['Balance'] = 0
-        
-        # Convert dataframe for consistency
-        df = DataFrameProcessor.convertToDatetime(df)
-        df = DataFrameProcessor.sortDataFrame(df)
+        case = DataManager.categorizeAccount(df)
+
+        # Final adjustments before returning
         df = DataFrameProcessor.getDataFrameIndex(df)
         df = DataFrameProcessor.convertCurrency(df)
-
-        case = DataManager.categorizeAccount(df)
         
         return df, case
 
@@ -129,28 +125,13 @@ class DataManager:
         Returns:
             str: Account type category (e.g., "Type 1", "Type 2").
         """
-        if (
-           (df["Payment"] <= 0.00).all() and 
-           (df["Deposit"] >= 0.00).all() and 
-           (df["Balance"] == 0.00).all()
-            ):
+        if (df["Payment"] <= 0.00).all() and (df["Deposit"] >= 0.00).all() and (df["Balance"] == 0.00).all():
             return "Type 1"
-        elif (
-            (df["Payment"] >= 0.00).all() and 
-            (df["Deposit"] <= 0.00).all() and 
-            (df["Balance"] == 0.00).all()
-            ):
+        elif (df["Payment"] >= 0.00).all() and (df["Deposit"] <= 0.00).all() and (df["Balance"] == 0.00).all():
             return "Type 2"
-        elif (
-            (df["Payment"] >= 0.00).all() and 
-            (df["Deposit"] >= 0.00).all() and 
-            (df["Balance"] == 0.00).all()
-            ):
+        elif (df["Payment"] >= 0.00).all() and (df["Deposit"] >= 0.00).all() and (df["Balance"] == 0.00).all():
             return "Type 3"
-        elif (
-            (df["Payment"] >= -9999999.00).all() and 
-            (df["Deposit"] == 0.00).all()
-            ):
+        elif (df["Payment"] >= -999999.00).all() and (df["Deposit"] == 0.00).all():
             return "Type 4"
         else:
             return "Type 0"
@@ -1173,7 +1154,8 @@ class DashboardActions:
                 parsed_df, case = DataManager.parseNewDF(self.main_dashboard, df, account_name)
                 parsed_df = DataFrameProcessor.convertToDatetime(parsed_df)
 
-                self.main_dashboard.account_cases[account_name] = case
+                # Check for existing data in the DataFrame
+                leftover_df = self.checkAndMergeData(parsed_df, account_name)
 
                 df_to_check = self.getCurrentDF()
 
@@ -1371,22 +1353,13 @@ class DashboardActions:
     
         self.main_dashboard.initial_account_balances = init_bal_df
         self.main_dashboard.account_cases = acc_type_dict
-
-        self.finalizeDataUpdate(self.main_dashboard.all_banking_data)
-
-    def finalizeDataUpdate(self, df):
     
-        self.updateBalancesInDataFrame()
-        self.trackBankBalances(quick_kill=True)
-        self.updateTable(df)
+        self.updateTable(self.main_dashboard.all_banking_data)
 
         self.getCategories()
         self.getAssets()
         self.getInvestmentActions()
         self.getPayees()
-        self.getBankingAccounts()
-
-        self.updateSideBar(df)
  
     ########################################################
     # Table Widget Manipulation
@@ -1471,6 +1444,8 @@ class DashboardActions:
             self.widget_dashboard.tree,
             colors=[StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2]
         )
+
+        print (df)
 
         if self.main_dashboard.table_to_display == 'Banking':
             self.updateBalancesInDataFrame() 
@@ -1593,7 +1568,7 @@ class DashboardActions:
         self.main_dashboard.table_to_display = account_type
         self.updateTable(new_df)
     
-    def trackBankBalances(self, quick_kill=False) -> None:
+    def trackBankBalances(self) -> None:
         #TODO Make less monolithic
         """
         Opens a Toplevel window to manually review and update the latest balance for each banking account.
@@ -1773,7 +1748,6 @@ class DashboardActions:
                     )
 
             self.updateBalancesInDataFrame()
-            self.updateTable(self.main_dashboard.all_banking_data)
             balance_window.destroy()
     
         def closeWindow(event: tk.Event | None = None) -> None:
@@ -1803,9 +1777,6 @@ class DashboardActions:
         balance_window.bind("<Escape>", closeWindow)
     
         balance_window.focus_force()
-
-        if quick_kill:
-            applyChanges()
            
     def updateBalancesInDataFrame(self) -> None:
         """
@@ -1877,6 +1848,9 @@ class DashboardActions:
     
         # Find the index of the transaction that has the given date
         reference_idx = account_df[account_df["Date"] == given_date].index.min()
+
+        # Get account type
+        account_type = self.main_dashboard.account_cases[account]
         
         if pd.isna(reference_idx):
     
@@ -1889,39 +1863,57 @@ class DashboardActions:
             elif not pd.isna(next_idx):
                 reference_idx = next_idx
             else:
-                return df, 0 # Exit if no valid transactions exist
+                return df  # Exit if no valid transactions exist
         
         # Set the balance for the known transaction
         account_df.at[reference_idx, "Balance"] = given_balance
-        new_balance = given_balance
-
-        # Get account type
-        account_type = self.main_dashboard.account_cases[account]
-
+    
         # Forward propagate balance for later transactions
-        for idx in range(reference_idx, len(account_df.index), 1):
-            prev_balance = new_balance
-            deposit = account_df.at[idx, "Deposit"]
-            payment = account_df.at[idx, "Payment"]
+        for i in range(reference_idx, reference_idx+len(account_df)):
+            if i == reference_idx:
+                prev_balance = given_balance
+            else:
+                prev_balance = account_df.at[i - 1, "Balance"]
+            deposit = account_df.at[i, "Deposit"]
+            payment = account_df.at[i, "Payment"]
     
             if account_type == "Type 1":
-                new_balance  = prev_balance + payment + deposit  # (-) Payments, (+) Deposit, 0.00 Balance
+                account_df.at[i, "Balance"] = prev_balance + payment + deposit  # (-) Payments, (+) Deposit, 0.00 Balance
             elif account_type == "Type 2":
-                new_balance  = prev_balance - payment - deposit  # (+) Payments, (-) Deposit, 0.00 Balance
+                account_df.at[i, "Balance"] = prev_balance - payment - deposit  # (+) Payments, (-) Deposit, 0.00 Balance
             elif account_type == "Type 3":
-                new_balance  = prev_balance - payment + deposit  # Normal case
+                account_df.at[i, "Balance"] = prev_balance + deposit - payment  # Normal case
             elif account_type == "Type 4":
-                new_balance  = prev_balance + payment  # Deposits are ignored
+                account_df.at[i, "Balance"] = prev_balance + payment  # Deposits are ignored
             else:
-                return df, 0
-
-
+                return df 
+            
+        last_balance = account_df.at[i, 'Balance']
+           
+        #TODO
+        """
+        # Backward propagate balance for earlier transactions
+        for i in range(reference_idx - 1, -1, -1):
+            next_balance = account_df.at[i + 1, "Balance"]
+            deposit = account_df.at[i, "Deposit"]
+            payment = account_df.at[i, "Payment"]
+    
+            if account_type == "Type 1":
+                account_df.at[i, "Balance"] = next_balance - payment - deposit  # (-) Payments, (+) Deposit, 0.00 Balance
+            elif account_type == "Type 2":
+                account_df.at[i, "Balance"] = next_balance + payment + deposit  # (+) Payments, (-) Deposit, 0.00 Balance
+            elif account_type == "Type 3":
+                account_df.at[i, "Balance"] = next_balance - deposit + payment  # Normal case
+            elif account_type == "Type 4":
+                account_df.at[i, "Balance"] = next_balance - payment  # Deposits are ignored
+            else:
+                return df
+        """
+        
         # Merge updated balances back into the original DataFrame
         df.update(account_df)
     
-        #return df, calculated_balances.keys()[-1]
-        #return df, last_balance
-        return pd.DataFrame(), 0
+        return df, last_balance
     
     def showRightClickTableMenu(self, event=None):
         """Shows the context menu based on the column clicked."""
@@ -2307,7 +2299,6 @@ class DashboardActions:
                 # Update all accounts and balances
                 if idx == 0:
                     self.widget_dashboard.sidebar_labels[idx].config(text="Accounts")
-                    self.getBankingAccounts()
                     for account, balance in self.main_dashboard.current_account_balances.items():    
                         listbox.insert(tk.END, f"{account} ${balance / 100:.2f}")
                 # Update all banking categories
@@ -2332,7 +2323,6 @@ class DashboardActions:
                 # Update all accounts and balances
                 if idx == 0:
                     self.widget_dashboard.sidebar_labels[idx].config(text="Accounts")
-                    self.getInvestmentAccounts()
                 # Update investment assets
                 elif idx == 1:
                     self.getAssets()

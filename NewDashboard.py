@@ -1,0 +1,1808 @@
+import os
+import pandas as pd
+import numpy as np
+import pickle
+import importlib
+import re
+import sys
+
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, PhotoImage, font
+import tkinter.simpledialog as simpledialog
+import tkinter.colorchooser as colorchooser
+from PIL import Image, ImageTk
+from tkcalendar import Calendar
+
+from datetime import date
+
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+from matplotlib.text import OffsetFrom
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+
+import seaborn as sns
+
+import calendar
+
+from datetime import datetime, timedelta
+
+from typing import List, Tuple, Union, Optional
+
+#from Utility import Utility, Tables, Windows, Classifier
+from StyleConfig import StyleConfig
+
+class InputHandling:
+    """
+    A utility class responsible for handling file input operations such as reading CSV and pickle (.pkl) files.
+    
+    This class provides methods to:
+    - Open a file dialog for selecting .csv and .pkl files.
+    - Read CSV files into DataFrames.
+    - Read pickle files into Python dictionaries containing financial data.
+
+    It ensures proper error handling for file loading and provides user-friendly messages if the file format is unsupported or if any errors occur during the reading process. The methods are designed to simplify the file loading process by managing different types of input files in a consistent manner.
+    """
+    @staticmethod 
+    def parse_data_file_names() -> Tuple[str, List[str]]:
+        """
+        Opens a file dialog for .csv and .pkl files, allowing the user to choose multiple files.
+        
+        Returns:
+            pkl_file (str or None): Path to a single .pkl file if found.
+            csv_files (List[str]): List of .csv file paths if found (empty if pkl_file is found).
+        """
+        # Prompt user to pick multiple files
+        file_paths = filedialog.askopenfilenames(filetypes=[("CSV and PKL files", "*.csv *.pkl")])
+        
+        if not file_paths:
+            return [], []
+        
+        pkl_files, csv_files = [], []
+        
+        # Separate CSVs from PKL
+        for path in file_paths:
+            ext = os.path.splitext(path)[1].lower()
+            if ext == ".csv":
+                csv_files.append(path)
+            elif ext == ".pkl":
+                pkl_files.append(path)
+            else:
+                messagebox.showwarning("Unsupported File", f"Skipping file: {path}")
+        
+        return pkl_files, csv_files
+
+    @staticmethod
+    def read_csv(file_path: str) -> pd.DataFrame:
+        """
+        Load financial data from a CSV file
+        
+        Parameters:
+            file_path (str): Path to the CSV file.
+    
+        Returns:
+            pd.DataFrame: DataFrame containing the transaction data or an empty DataFrame if loading failed.
+        """
+        try:
+            df = pd.read_csv(file_path).fillna('')
+            return df
+        
+        except FileNotFoundError:
+            messagebox.showerror("File Not Found", "The selected file could not be found.")
+            return pd.DataFrame()
+        
+        except ValueError as e:
+            messagebox.showerror("Invalid File", f"Error loading file: {e}")
+            return pd.DataFrame()
+        
+        except Exception as e:
+            messagebox.showerror("Load Error", f"Failed to load data: {e}")
+            return pd.DataFrame()
+
+    @staticmethod    
+    def read_pkl(file_path: str) -> dict:
+        """
+        Loads data from a pickle file.
+        
+        Parameters:
+            file_path (str): Path to the PKL file.
+        
+        Returns:
+            Tuple: Contains:
+                - Banking Data (pd.DataFrame)
+                - Investment Data (pd.DataFrame)
+                - Initial Balances (dict)
+                - Account Types (dict)
+        """
+        if not file_path:
+            messagebox.showerror("Error", "No file selected!")
+            return {}
+         
+        try:
+            with open(file_path, "rb") as f:
+                data = pickle.load(f)
+            return data
+            
+        except FileNotFoundError:
+            messagebox.showerror("File Not Found", "The selected file could not be found.")
+            return {}
+        
+        except ValueError as e:
+            messagebox.showerror("Invalid File", f"Error loading file: {e}")
+            return  {}
+        
+        except Exception as e:
+            messagebox.showerror("Load Error", f"Failed to load data: {e}")
+            return  {} 
+        
+
+class OutputHandling:
+    @staticmethod
+    def export_data():
+        """
+
+        """
+        a = 5
+    
+    @staticmethod
+    def save_data():
+        """
+
+        """
+        a = 5
+        
+
+class DataManager:
+    """
+    A utility class for managing and manipulating DataFrames, particularly in the context of merging financial data.
+
+    This class provides several static methods for:
+    - Joining two DataFrames by comparing specified columns and appending non-matching rows from one DataFrame to another.
+    - Stripping down a DataFrame to specified columns for comparison or further processing.
+    - Identifying non-matching entries between two DataFrames.
+    - Merging DataFrames by appending new, unique entries to an existing DataFrame.
+
+    The class ensures efficient handling of financial data by comparing, merging, and processing DataFrames, particularly when combining new data with existing datasets.
+    """
+    @staticmethod
+    def join_df(df1: pd.DataFrame, df2: pd.DataFrame, matching_headers: List[str]) -> pd.DataFrame:
+        """
+        Joins two DataFrames by comparing specified columns and appending non-matching rows from df2 to df1.
+
+        Parameters:
+        - df1 (pd.DataFrame): The first DataFrame (new data).
+        - df2 (pd.DataFrame): The second DataFrame (old data).
+        - matching_headers (List[str]): List of headers to compare between the two DataFrames.
+
+        Returns:
+        - pd.DataFrame: The updated DataFrame with non-matching rows from df2 appended to df1.
+        """
+        # Strip both DataFrames to only the relevant columns
+        condensed_df1 = DataManager.strip_df_columns(df1, matching_headers)
+        condensed_df2 = DataManager.strip_df_columns(df2, matching_headers)
+
+        # Find non-matching rows
+        non_matching_entries = DataManager.find_non_matching_entries(condensed_df1, condensed_df2)
+
+        # Extract indices of non-matching rows from df1
+        non_matching_indices = non_matching_entries.index.tolist()
+
+        # Append the non-matching rows from df2 to df1
+        all_data = DataManager.add_new_entries(df2, df1.loc[non_matching_indices])
+
+        return all_data
+    
+    @staticmethod
+    def strip_df_columns(df: pd.DataFrame, headers: List[str]) -> pd.DataFrame:
+        """
+        Strips the DataFrame down to the specified columns.
+
+        Parameters:
+        - df (pd.DataFrame): The DataFrame to strip.
+        - headers (List[str]): The list of column names to keep in the DataFrame.
+
+        Returns:
+        - pd.DataFrame: A DataFrame with only the specified columns.
+        """
+        return df[headers]
+    
+    @staticmethod
+    def find_non_matching_entries(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compares two DataFrames and returns rows in df1 that are not in df2.
+
+        Parameters:
+        - df1 (pd.DataFrame): New DataFrame to compare.
+        - df2 (pd.DataFrame): Old DataFrame to compare against.
+
+        Returns:
+        - pd.DataFrame: Rows in df1 that are not in df2.
+        """
+        return df1.loc[~df1.apply(tuple, axis=1).isin(df2.apply(tuple, axis=1))]
+    
+    @staticmethod
+    def add_new_entries(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
+        """
+        Merges two DataFrames by appending rows from df2 to df1, ensuring unique entries.
+
+        Parameters:
+        - df1 (pd.DataFrame): First DataFrame (existing data).
+        - df2 (pd.DataFrame): Second DataFrame (new data).
+
+        Returns:
+        - pd.DataFrame: Merged DataFrame with unique entries from df2 appended to df1.
+        """
+        return pd.concat([df1, df2], ignore_index=True).drop(columns=['Index'], errors='ignore')
+    
+
+class DataFrameFormatting:
+    """
+    A utility class for formatting and processing DataFrames related to financial data.
+    This class includes methods for sorting, indexing, converting currency, and formatting dates.
+    """
+
+    @staticmethod
+    def format_old_dataframe(df: pd.DataFrame, currency_factor: int = 100) -> pd.DataFrame:
+        """
+        Formats the given DataFrame by performing a series of transformations:
+        - Sorting the DataFrame by 'Account' and 'Date'
+        - Adding an 'Index' column
+        - Converting the 'Payment', 'Deposit', and 'Balance' columns to cents format
+        - Converting the 'Date' column to datetime format
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame to format.
+        - currency_factor (int): The factor to multiply by for currency conversion (default is 100, for dollars to cents).
+
+        Returns:
+        - pd.DataFrame: The formatted DataFrame after all transformations.
+        """
+        # Apply all formatting steps in sequence
+        df = DataFrameFormatting.sort_dataframe(df)
+        df = DataFrameFormatting.get_dataframe_index(df)
+        df = DataFrameFormatting.convert_currency(df, currency_factor=currency_factor)
+        df = DataFrameFormatting.convert_datetime(df)
+
+        return df
+    
+    @staticmethod
+    def format_new_dataframe(df: pd.DataFrame, expected_columns: list[str], account_name: str) -> pd.DataFrame:
+        """
+        Formats the given DataFrame by performing a series of transformations:
+        - Normalizing the column headers
+        - Add any missing columns
+        - Adding in the account name information
+        - Formatting the entire dataframe for consistency
+        
+        Then determines the type of dataframe based on the monetary columns
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame to format.
+        - dashboard ("Dashboard"): The main_dashboard widget
+        - account_name (str): the name of the account
+
+        Returns:
+        - pd.DataFrame: The formatted DataFrame after all transformations.
+        """
+        # Apply all formatting steps in sequence
+        df = DataFrameFormatting.normalize_columns(df)
+        df = DataFrameFormatting.add_missing_columns(df, expected_columns)
+        df = DataFrameFormatting.add_account_column(df, account_name)
+        df = DataFrameFormatting.format_old_dataframe(df, currency_factor=100)
+
+        case = DataFrameFormatting.categorize_account(df)
+
+        return df, case
+
+    @staticmethod 
+    def sort_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Sorts a DataFrame in ascending order based on the 'Account' and 'Date' columns.
+        
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame to sort.
+        
+        Returns:
+        - pd.DataFrame: The sorted DataFrame with a reset index.
+        """
+        # Sort by 'Account' first, then by 'Date' in ascending order
+        df = df.sort_values(by=['Account', 'Date'], ascending=True, inplace=False).reset_index(drop=True)
+        return df
+
+    @staticmethod
+    def get_dataframe_index(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Ensures that the DataFrame has an 'Index' column as the first column.
+        If 'No.' exists, it is renamed to 'Index' and set as the first column.
+
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame to update.
+        
+        Returns:
+        - pd.DataFrame: The updated DataFrame with 'Index' as the first column.
+        """
+        # Reset index and remove any existing 'No.' column
+        df = df.reset_index(drop=True)
+        if 'No.' in df.columns:
+            df = df.drop(columns=['No.'])
+
+        # Add the 'Index' column as the first column based on the DataFrame's current index
+        df.insert(0, 'No.', df.index)
+        return df
+    
+    @staticmethod 
+    def convert_currency(df: pd.DataFrame, currency_factor: int = 100) -> pd.DataFrame:
+        """
+        Converts the 'Payment', 'Deposit', and 'Balance' columns in a DataFrame to cents format (integer).
+        
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame containing financial data.
+        - currency_factor (int): The factor to multiply by for currency conversion (default is 100 for converting dollars to cents).
+
+        Returns:
+        - pd.DataFrame: The updated DataFrame with the 'Payment', 'Deposit', and 'Balance' columns converted to cents format.
+        """
+        # Iterate over the relevant financial columns and convert them to cents
+        for col in ['Payment', 'Deposit', 'Balance']:
+            if col in df.columns:
+                # Ensure the column is treated as a string for processing (e.g., removing symbols, commas)
+                df[col] = df[col].astype(str)  # Ensure strings for processing
+                
+                # Clean the column by removing dollar signs, commas, and handling negative parentheses
+                df[col] = df[col].replace({'\\$': '', ',': '', '\\(': '-', '\\)': ''}, regex=True)
+                
+                # Convert to numeric, replace NaNs with 0
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+                # Apply the currency factor (e.g., 100 for dollars to cents)
+                df[col] = (df[col] * currency_factor).round().astype(int)
+
+        return df
+    
+    @staticmethod 
+    def convert_datetime(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Converts the 'Date' column in a DataFrame to datetime format, ensuring proper formatting.
+        
+        Parameters:
+        - df (pd.DataFrame): The input DataFrame containing a 'Date' column.
+
+        Returns:
+        - pd.DataFrame: The updated DataFrame with the 'Date' column converted to datetime format.
+        """
+        if 'Date' not in df.columns:
+            df['Date'] = ''
+        df['Date'] = pd.to_datetime(df['Date'], dayfirst=False, format='mixed').dt.date
+        return df
+    
+    @staticmethod
+    def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Normalizes column names to a standard format.
+        
+        Parameters:
+            df (pd.DataFrame): DataFrame with raw columns.
+        
+        Returns:
+            pd.DataFrame: DataFrame with normalized column names.
+        """
+        header_mapping = {
+            "Transaction ID": "No.",
+            "Transaction Date": "Date",
+            "Amount": "Payment",
+            "Credit": "Deposit",
+            "Debit": "Payment",
+            "Memo": "Note"
+        }
+
+        df.columns = [header_mapping.get(col, col) for col in df.columns]
+        return df
+    
+    @staticmethod
+    def add_missing_columns(df: pd.DataFrame, expected_columns: list[str]) -> pd.DataFrame:
+        """
+        Adds missing columns to the DataFrame based on the expected headers from the dashboard.
+        If a column is missing, it is added with an empty value.
+
+        Parameters:
+        - dashboard (Dashboard): The dashboard instance from which expected headers are fetched.
+        - df (pd.DataFrame): The DataFrame to be updated.
+
+        Returns:
+        - pd.DataFrame: The updated DataFrame with missing columns added and reordered.
+        """
+        # Add missing columns with empty values
+        for col in expected_columns:
+            if col not in df.columns:
+                if col == 'Balance':
+                    df[col] = 0
+                else:
+                    df[col] = ""
+
+        # Reorder the DataFrame to match the expected headers
+        df = df[expected_columns]
+        
+        return df
+    
+    @staticmethod
+    def add_account_column(df: pd.DataFrame, account_name: str) -> pd.DataFrame:
+        """
+        Adds an 'Account' column to the DataFrame and fills it with the provided account name.
+
+        Parameters:
+        - df (pd.DataFrame): The DataFrame to be updated.
+        - account_name (str): The account name to be added to the 'Account' column.
+
+        Returns:
+        - pd.DataFrame: The updated DataFrame with the 'Account' column.
+        """
+        # Add the 'Account' column with the specified account name
+        df.loc[:,'Account'] = account_name
+
+        return df
+    
+    @staticmethod
+    def categorize_account(df: pd.DataFrame) -> str:
+        """
+        Categorizes the account based on transaction patterns (e.g., Payment, Deposit, Balance).
+        
+        Parameters:
+            df (pd.DataFrame): DataFrame containing the financial data.
+        
+        Returns:
+            str: Account type category (e.g., "Type 1", "Type 2").
+        """
+        if (
+            (df["Payment"] <= 0.00).all() and 
+            (df["Deposit"] >= 0.00).all() and 
+            (df["Balance"] == 0.00).all()
+        ):
+            return "Type 1"
+        elif (
+            (df["Payment"] >= 0.00).all() and 
+            (df["Deposit"] <= 0.00).all() and 
+            (df["Balance"] == 0.00).all()
+        ):
+            return "Type 2"
+        elif (
+            (df["Payment"] >= 0.00).all() and 
+            (df["Deposit"] >= 0.00).all() and 
+            (df["Balance"] == 0.00).all()
+        ):
+            return "Type 3"
+        elif (
+            (df["Payment"] >= -999999.00).all() and 
+            (df["Deposit"] == 0.00).all()
+        ):
+            return "Type 4"
+        else:
+            return "Type 0"
+
+
+
+
+    
+class Tables:
+
+    @staticmethod
+    def table_style(style: ttk.Style) -> None:
+        """
+        Applies a consistent style to Treeview tables.
+    
+        Parameters:
+            style: The ttk.Style object used for configuring table appearance.
+        """
+        style.configure("Treeview", rowheight=25, font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE))  # Set row height and font
+        style.configure("Treeview.Heading", font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"))  # Bold headers
+        style.configure("Treeview.Heading", padding=(5,25), anchor='center', justify='center')
+        style.layout("Treeview.Heading", [
+                                            ("Treeheading.cell", {"sticky": "nswe"}),  # Stretches the header cell
+                                            ("Treeheading.border", {"sticky": "nswe"}),  # Ensures full stretch
+                                            ("Treeheading.padding", {"sticky": "nswe"}),  # Applies padding in all directions
+                                            ("Treeheading.label", {"sticky": "nswe"})  # Ensures text is centered in the label
+                                        ])
+
+    def clear_table(tree: ttk.Treeview) -> None:
+        """
+        Clears all items from a Treeview widget.
+    
+        Parameters:
+            tree: The ttk.Treeview widget to be cleared.
+        """
+        tree.delete(*tree.get_children())
+        
+    def sort_table_by_column(tv:ttk.Treeview, col: 'str', reverse: bool, colors: List) -> None:
+        """Sorts a Treeview column properly, handling currency values and reapplying row colors."""
+
+        def convert_value(val):
+            """Converts currency values ($XXX.XX) to float for sorting."""
+            try:
+                return float(val.replace("$", "").replace(",", "").replace("%", ""))
+            except ValueError:
+                return val.lower()
+            
+        # Get values and sort correctly
+        l = [(convert_value(tv.set(k, col)), k) for k in tv.get_children('')]
+        l.sort(reverse=reverse)
+    
+        # Rearrange items in sorted order
+        for index, (val, k) in enumerate(l):
+            tv.move(k, '', index)
+    
+        # Reapply banded row styling
+        Tables.apply_banded_rows(tv, colors=colors)
+    
+        # Reverse sort next time
+        tv.heading(col, command=lambda: Tables.sortTableByColumn(tv, col, not reverse, colors))
+        
+    def apply_banded_rows(tv: ttk.Treeview, colors: list[str, str]) -> None:
+        """Recolors Treeview rows to maintain alternating row stripes after sorting."""
+        for index, row in enumerate(tv.get_children('')):
+            tag = "evenrow" if index % 2 == 0 else "oddrow"
+            tv.item(row, tags=(tag,))
+    
+        # Define colors for tags
+        tv.tag_configure("evenrow", background=colors[0])
+        tv.tag_configure("oddrow", background=colors[1]) 
+        
+class Windows:
+    @staticmethod
+    def open_relative_window(new_window, main_width: int, main_height: int, width: int, height: int) -> None:
+        """
+        Positions the new window relative to the main application window.
+    
+        This ensures that the new window appears slightly offset from the main window.
+    
+        Parameters:
+            new_window: The new Tkinter window to be positioned.
+            main_width  (int): The current width of new_window
+            main_height (int): The current height of new_window
+            width       (int): The width of the new window.
+            height      (int): The height of the new window.
+    
+        Returns:
+            None
+        """    
+        # Position new window slightly offset from the main window
+        new_x = main_width  + 250
+        new_y = main_height + 250
+    
+        new_window.geometry(f"{width}x{height}+{new_x}+{new_y}")  # Format: "WIDTHxHEIGHT+X+Y"
+
+    @staticmethod
+    def open_calendar_window(entry, date): 
+        # Create a Toplevel window with a calendar
+        cal_win = tk.Toplevel()
+        cal_win.title("Select Date")
+        cal_win.geometry("250x250")
+
+        cal = Calendar(
+            cal_win,
+            selectmode="day",
+            year=date.year,
+            month=date.month,
+            day=date.day,
+            date_pattern='yyyy-mm-dd'
+        )
+        cal.pack(padx=10, pady=10)
+
+        def select_date():
+            entry.delete(0, tk.END)
+            entry.insert(0, cal.get_date())
+            cal_win.destroy()
+
+        # Buttons for confirming or canceling date selection
+        tk.Button(cal_win, text="OK", command=select_date).pack(pady=5, padx=5)
+        tk.Button(cal_win, text="Cancel", command=cal_win.destroy).pack(pady=5, padx=5)
+
+        # Key bindings for date selection
+        cal_win.bind("<Return>", select_date)
+        cal_win.bind("<Escape>", cal_win.destroy)
+        cal_win.focus_force() 
+
+class Utility:
+    @staticmethod
+    def get_category_types(name: str) -> Tuple[List[str], str]:
+        """
+        Retrieves category types from the appropriate file.
+    
+        Parameters:
+            name (str): If 'inc', loads income categories; otherwise, loads spending categories.
+    
+        Returns:
+            Tuple[List[str], str]: A sorted list of category names and the full path to the category file.
+        """
+        file_name = "IncomeCategories.txt" if name == 'inc' else "SpendingCategories.txt"
+        cat_file = os.path.join(os.path.dirname(__file__), file_name)
+        
+        with open(cat_file) as ff:
+            categories = [cat.strip() for cat in ff.readlines()]  # Strip newline characters
+
+        return sorted(categories), cat_file
+    
+    @staticmethod
+    def generate_month_year_list(start_date: datetime, end_date: datetime) -> List[Tuple[int, int]]:
+        """
+        Generates a list of (month, year) tuples between two datetime objects.
+    
+        Parameters:
+            start_date: The starting datetime object.
+            end_date: The ending datetime object.
+            
+        Returns:
+            List of tuples in the format (month, year).
+        """
+        current_date = datetime(start_date.year, start_date.month, 1)
+        end_date = datetime(end_date.year, end_date.month, 1)
+        
+        month_year_list = []
+    
+        while current_date <= end_date:
+            month_year_list.append((current_date.month, current_date.year))
+            
+            # Move to the next month
+            next_month = current_date.month + 1
+            next_year = current_date.year + (1 if next_month > 12 else 0)
+            current_date = datetime(next_year, 1 if next_month > 12 else next_month, 1)
+
+        return month_year_list
+    
+    def format_month_year(month: int, year: int) -> datetime:
+        """
+        Convert a month and year into the format 'MM 'YY'.
+        
+        Parameters:
+            month (int): The month
+            year (int): The year
+            
+        Returns:
+            A (str) in the format "Mon 'YY"
+        """
+        return datetime(year, month, 1).strftime("%b '%y")
+    
+    def format_month_last_day_year(month: int, year: int) -> datetime:
+        """
+        Convert a month and year into the format 'Mon 'YY'.
+        
+        Parameters:
+            month (int): The month
+            year (int): The year
+            
+        Returns:
+            The last day of a month given as a string in the format "MM DD 'YY"
+        """
+        last_day = (datetime(year, month + 1, 1) - timedelta(days=1)).day
+        return datetime(year, month, last_day).strftime("%b %d, '%y")
+    
+    def format_date_from_string(day: 'str') -> datetime:
+        """
+        Convert a month and year into the format 'Mon 'YY'.
+        
+        Parameters:
+            day (str): The day in YYYY-MM-DD format
+            
+        Returns:
+            The last day of a month given as a string in the format "MM DD 'YY"
+        """
+        new_day = day.split("-")
+        return datetime(int(new_day[0]), int(new_day[1]), int(new_day[2])).strftime("%Y-%m-%d")
+    
+class TransactionManager:
+    @staticmethod
+    def open_entry_window():
+        """
+
+        """
+        a = 5
+        
+    @staticmethod
+    def validate_field():
+        """
+
+        """
+        a = 5
+    
+    @staticmethod
+    def collect_stored_values():
+        """
+
+        """
+        a = 5
+    
+    @staticmethod
+    def process_entry():
+        """
+
+        """
+        a = 5
+        
+    @staticmethod
+    def get_data_frame_to_update():
+        """
+
+        """
+        a = 5
+
+    @staticmethod
+    def update_existing_entry():
+        """
+
+        """
+        a = 5
+
+    @staticmethod
+    def add_new_entry():
+        """
+
+        """
+        a = 5
+
+    @staticmethod
+    def create_input_field():
+        """
+
+        """
+        a = 5
+    
+    @staticmethod
+    def create_date_field():
+        """
+
+        """
+        a = 5
+
+    @staticmethod
+    def create_numeric_field():
+        """
+
+        """
+        a = 5
+
+    @staticmethod
+    def create_text_field():
+        """
+
+        """
+        a = 5
+
+    @staticmethod
+    def create_immutable_field():
+        """
+
+        """
+        a = 5
+
+    @staticmethod
+    def create_dropdown_field():
+        """
+
+        """
+        a = 5
+
+    @staticmethod
+    def prepare_headers_and_prefill_data():
+        """
+
+        """
+        a = 5
+
+    @staticmethod
+    def delete_entry():
+        """
+
+        """
+        a = 5
+
+
+class DashboardUI(tk.Frame):
+    def __init__(self, parent_dashboard, master=None, *args, **kwargs):
+        """
+        A Frame-based class that builds the UI portion of the Dashboard.
+        
+        Parameters:
+            parent_dashboard: Reference to the main Dashboard instance 
+        """
+        super().__init__(master, *args, **kwargs)
+        
+        self.parent_dashboard = parent_dashboard
+
+        # Keep references to your UI widgets
+        self.sidebar = None
+        self.toolbar = None
+        self.main_content = None
+        self.tree = None
+        
+        # This frame itself also needs geometry management in the parent:
+        self.grid(row=0, column=0, sticky="nsew")
+        
+        # Actions manager for all dashboard/UI actions
+        self.actions_manager = DashboardActions(self.parent_dashboard, self)
+        
+        # Build out the UI
+        self.create_widgets()
+        
+    ########################################################
+    # WIDGETS
+    ########################################################
+    def create_widgets(self):
+        """Creates and places all main widgets for the dashboard."""
+        
+        # Sidebar widget
+        self.sidebar = tk.Frame(self, width=350, relief=tk.RIDGE, bg=StyleConfig.BG_COLOR)
+        self.sidebar.grid(row=0, column=0, sticky='nsew')
+        self.create_sidebar()
+        
+        # Non-Sidebar Widgets
+        self.main_content = tk.Frame(self)
+        self.main_content.grid(row=0, column=1, sticky='nsew')
+        self.main_content.grid_columnconfigure(0, weight=1)
+        self.main_content.grid_rowconfigure(1, weight=1)
+        
+        # Toolbar widget
+        self.create_toolbar()
+        
+        # Treeview widget
+        self.create_transaction_table()
+        
+        # Configure layout
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        
+        # Apply UI Style
+        self.apply_style_changes()
+        
+    ########################################################
+    # SIDEBAR
+    ########################################################
+    def create_sidebar(self):
+        """Creates the sidebar with accounts, categories, payees, and reports."""
+        self.sidebar_labels = []
+        self.sidebar_listboxes = []
+        self.sidebar_frames = []
+
+        sidebar_items = ["Accounts", "Categories", "Payees", "Reports"]
+
+        for idx, item in enumerate(sidebar_items):
+            self._create_sidebar_label(item, idx)
+            self._create_sidebar_listbox(idx)
+
+        # Configure sidebar grid to expand
+        self.sidebar.grid_columnconfigure(0, weight=1)
+
+    def _create_sidebar_label(self, item, idx):
+        """Creates a label for the sidebar."""
+        label = tk.Label(
+            self.sidebar,
+            text=item,
+            font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
+            bg=StyleConfig.BG_COLOR,
+            fg=StyleConfig.TEXT_COLOR
+        )
+        label.grid(row=2*idx, column=0, sticky="ew", padx=5, pady=(10, 0))
+        self.sidebar_labels.append(label)
+
+    def _create_sidebar_listbox(self, idx):
+        """Creates a listbox with a scrollbar for the sidebar."""
+        listbox_frame = ttk.Frame(self.sidebar)
+        listbox_frame.grid(row=2*idx+1, column=0, sticky="ew", padx=5, pady=(0, 10))
+
+        listbox = tk.Listbox(listbox_frame, height=6, width=35)
+        listbox.pack(side=tk.LEFT, fill='x', expand=True)
+
+        scrollbar = ttk.Scrollbar(listbox_frame, orient=tk.VERTICAL, command=listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill='y')
+        listbox.config(yscrollcommand=scrollbar.set)
+
+        # Bind events
+        listbox.bind("<MouseWheel>", self.actions_manager.smooth_scroll)
+        listbox.bind("<Double-Button-1>", lambda event, idx=idx: self.actions_manager.filter_entries(case=idx+1))
+
+        self.sidebar_listboxes.append(listbox)
+        self.sidebar_frames.append(listbox_frame)
+        
+    ########################################################
+    # TOOLBAR
+    ########################################################
+    def create_toolbar(self):
+        """Creates a toolbar with basic transaction actions."""
+    
+        self.toolbar = tk.Frame(self.main_content, relief=StyleConfig.BUTTON_STYLE, bg=StyleConfig.BG_COLOR)
+        self.toolbar.grid(row=0, column=0, sticky='nsew')
+        
+        # Initialize the image and button storage
+        self.button_image_loc = os.path.join(os.path.dirname(__file__), "Images")
+        self.buttons = []
+        self.images = {}
+        
+        # Define button configurations
+        button_data = self._get_button_data()
+        btn_size = 50  # Button size
+        
+        # Create buttons and separators
+        self._create_buttons_and_separators(button_data, btn_size)
+        
+        # Create search field and buttons
+        self._create_search_bar()
+
+    def _get_button_data(self):
+        """Returns a list of button data for toolbar buttons."""
+        return [
+            ("Add",         "add.png",      self.actions_manager.add_entry),
+            ("Edit",        "edit.png",     self.actions_manager.edit_entry),
+            ("Delete",      "delete.png",   self.actions_manager.delete_entry),
+            ("Open",        "open.png",     self.actions_manager.open_data),
+            ("Balances",    "accounts.png", self.actions_manager.track_bank_balances),
+            ("Payee",       "payee.png",    lambda: self.actions_manager.manage_items("Payees")),
+            ("Category",    "category.png", lambda: self.actions_manager.manage_items("Categories")),
+            ("Actions",     "actions.png",  lambda: self.actions_manager.manage_items("Actions")),
+            ("Banking",     "banking.png",  lambda: self.actions_manager.switch_account_view("Banking")),
+            ("Stocks",      "stonks.png",   lambda: self.actions_manager.switch_account_view("Investments")),
+            ("Reports",     "budget.png",   self.actions_manager.display_reports),
+            ("Export",      "export.png",   self.actions_manager.export_data),
+            ("Options",     "options.png",  self.actions_manager.view_options),
+        ]
+
+    def _create_buttons_and_separators(self, button_data, btn_size):
+        """Creates buttons and separators for the toolbar."""
+        for index, (text, icon, command) in enumerate(button_data):
+            button = self._create_button(text, icon, command, btn_size)
+            button.pack(side=tk.LEFT, padx=4, pady=2)
+            self.buttons.append(button)
+            
+            if index in [3, 7, 9, 10]:
+                self._create_separator()
+
+    def _create_button(self, text, icon, command, btn_size):
+        """Helper method to create individual buttons."""
+        img_path = os.path.join(self.button_image_loc, icon)
+        img = Image.open(img_path)
+        img = img.resize((36,36))  # Resize image to 24x24 pixels
+        self.images[icon] = ImageTk.PhotoImage(img)
+        
+        try:
+            button = tk.Button(
+                self.toolbar, 
+                text=text, 
+                image=self.images[icon], 
+                compound=tk.TOP, 
+                command=command, 
+                width=btn_size, 
+                height=btn_size, 
+                bg=StyleConfig.BUTTON_COLOR, 
+                relief=StyleConfig.BUTTON_STYLE
+            )
+        except:
+            button = tk.Button(
+                self.toolbar, 
+                text=text, 
+                compound=tk.TOP, 
+                command=command, 
+                width=btn_size, 
+                height=btn_size, 
+                bg=StyleConfig.BUTTON_COLOR, 
+                relief=StyleConfig.BUTTON_STYLE
+            )
+        return button
+
+    def _create_separator(self):
+        """Helper method to create separators in the toolbar."""
+        ttk.Separator(self.toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
+
+    def _create_search_bar(self):
+        """Creates the search label, entry, and buttons in the toolbar."""
+        # Search label
+        self.search_label = tk.Label(
+            self.toolbar, 
+            text="Search:", 
+            font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE),
+            bg=StyleConfig.BG_COLOR, 
+            fg=StyleConfig.TEXT_COLOR
+        )
+        self.search_label.pack(side=tk.LEFT, padx=5)
+        
+        # Search entry
+        self.search_entry = tk.Entry(self.toolbar, width=30, bg=StyleConfig.BUTTON_COLOR)
+        self.search_entry.pack(side=tk.LEFT, padx=5)
+        self.search_entry.bind("<Return>", lambda event: self.actions_manager.search_transactions())
+        
+        # Search button
+        search_button = tk.Button(self.toolbar, 
+                                text="Go",
+                                command=self.actions_manager.search_transactions, 
+                                bg=StyleConfig.BUTTON_COLOR, 
+                                relief=StyleConfig.BUTTON_STYLE)
+        search_button.pack(side=tk.LEFT, padx=5)
+        self.buttons.append(search_button)
+        
+        # Advanced search button
+        adv_search_button = tk.Button(self.toolbar, 
+                                    text="Advanced Search", 
+                                    command=self.actions_manager.open_advanced_search,
+                                    bg=StyleConfig.BUTTON_COLOR, 
+                                    relief=StyleConfig.BUTTON_STYLE)
+        adv_search_button.pack(side=tk.LEFT, padx=5)
+        self.buttons.append(adv_search_button)
+
+    ########################################################
+    # MAIN WORKING PORTION OF WINDOW
+    ########################################################
+    def create_transaction_table(self):
+        """Creates the transaction table with scrolling, as a placeholder for future graphs/plots."""
+        
+        # Create the content frame (for table, graph, etc.)
+        self._create_content_frame()
+        
+        # Initialize the treeview (transaction table)
+        self._create_table_treeview()
+        
+        # Initialize the scrollbar
+        self._create_table_scrollbar()
+        
+        # Bind events to the table
+        self._bind_table_events()
+
+    def _create_content_frame(self):
+        """Creates the content frame that holds the table, plot, or other content."""
+        # Create a frame where any content (table/graphs/reports) will go
+        self.content_frame = tk.Frame(self.main_content)
+        self.content_frame.grid(row=1, column=0, sticky='nsew', padx=10, pady=10)
+        
+        # Configure layout
+        self.content_frame.grid_columnconfigure(0, weight=1)
+        self.content_frame.grid_rowconfigure(0, weight=1)
+
+    def _create_table_treeview(self):
+        """Creates the Treeview widget for displaying transaction data."""
+        self.tree = ttk.Treeview(self.content_frame, 
+                                show='headings',
+                                yscrollcommand=lambda *args: self.y_scrollbar.set(*args),
+                                height=15)
+        self.tree.grid(row=0, column=0, sticky='nsew')
+
+    def _create_table_scrollbar(self):
+        """Creates the vertical scrollbar for the Treeview."""
+        self.y_scrollbar = ttk.Scrollbar(self.content_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=self.y_scrollbar.set)
+        self.y_scrollbar.grid(row=0, column=1, sticky='ns')
+
+    def _bind_table_events(self):
+        """Binds events to the Treeview widget."""
+        # Bind double-click to edit cell
+        self.tree.bind("<Double-1>", self.actions_manager.edit_cell)
+        self.tree.bind("<Button-3>", lambda event: self.actions_manager.show_right_click_table_menu(event))
+
+    def show_transaction_table(self, data):
+        """Displays the transaction table (Treeview) in the content area."""
+        # Remove any existing widgets in the content area
+        self._clear_content_area()
+
+        # Re-create the table with the provided data
+        self.create_transaction_table()  # Or update the Treeview with new data
+
+    def show_graph(self, plot):
+        """Displays a Matplotlib graph in the content area."""
+        self._clear_content_area()
+        
+        # Embed the Matplotlib figure into the Tkinter content area
+        self.figure_canvas = FigureCanvasTkAgg(plot, master=self.content_frame)  # Create a canvas from the plot
+        self.figure_canvas.draw()
+        self.figure_canvas.get_tk_widget().grid(row=0, column=0, sticky='nsew')  # Place the plot into the grid
+
+    def show_report(self, report):
+        """Displays a report in the content area (can be text, tables, etc.)."""
+        self._clear_content_area()
+        
+        # Example for a text-based report
+        report_label = tk.Label(self.content_frame, text=report, bg=StyleConfig.BG_COLOR, fg=StyleConfig.TEXT_COLOR)
+        report_label.grid(row=0, column=0, sticky="nsew")
+
+    def _clear_content_area(self):
+        """Clears the content area (useful for swapping between views)."""
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()  # Destroy all widgets (treeview, plot, report) currently in the content frame
+
+    ########################################################
+    # UI STYLE
+    ########################################################    
+    def apply_style_changes(self):
+        """Applies updated style settings dynamically to ttk and standard Tk widgets."""
+        # Apply background color to main sections
+        sections = [self.sidebar, self.toolbar, self.main_content, self.content_frame]
+        for section in sections:
+            section.config(bg=StyleConfig.BG_COLOR)
+
+        style = ttk.Style()
+        self._apply_treeview_style(style)
+        self._apply_button_style()
+        self._apply_sidebar_style()
+
+        # Ensure the colors update immediately
+        self.update_idletasks()
+
+    def _apply_treeview_style(self, style):
+        style.configure("Treeview", 
+                        rowheight=StyleConfig.ROW_HEIGHT, 
+                        font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE),
+                        background=StyleConfig.BG_COLOR,
+                        foreground=StyleConfig.TEXT_COLOR,
+                        fieldbackground=StyleConfig.BG_COLOR)
+
+        style.configure("Treeview.Heading", 
+                        font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
+                        background=StyleConfig.HEADER_COLOR, 
+                        foreground='black',
+                        fieldbackground=StyleConfig.BG_COLOR,
+                        relief="flat")
+        
+        Tables.apply_banded_rows(self.tree, colors=[StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2])
+        
+        style.map("Treeview", 
+                background=[("selected", StyleConfig.SELECTION_COLOR)],
+                foreground=[("selected", "#FFFFFF" if StyleConfig.DARK_MODE else "#000000")])
+
+    def _apply_button_style(self):
+        for btn in self.buttons:
+            btn.config(bg=StyleConfig.BUTTON_COLOR,
+                    fg=StyleConfig.TEXT_COLOR,  
+                    relief=StyleConfig.BUTTON_STYLE, 
+                    padx=StyleConfig.BUTTON_PADDING, 
+                    pady=StyleConfig.BUTTON_PADDING, 
+                    font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
+
+    def _apply_sidebar_style(self):
+        for label in self.sidebar_labels:
+            label.config(bg=StyleConfig.BG_COLOR, 
+                        fg=StyleConfig.TEXT_COLOR, 
+                        font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"))
+
+        for listbox in self.sidebar_listboxes:
+            listbox.config(bg=StyleConfig.BG_COLOR, 
+                        fg=StyleConfig.TEXT_COLOR, 
+                        font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
+
+        self.search_label.config(bg=StyleConfig.BG_COLOR, 
+                                fg=StyleConfig.TEXT_COLOR, 
+                                font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
+        self.search_entry.config(bg=StyleConfig.BG_COLOR, 
+                                fg=StyleConfig.TEXT_COLOR, 
+                                font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE))
+
+
+class DashboardActions:
+    """
+    Handles user-driven actions from the Dashboard. 
+    """
+
+    def __init__(self, main_dashboard: "Dashboard", widget_dashboard: "Dashboard") -> None:
+        """
+        Initializes a DashboardActions object, storing references to the application's data
+        (main_dashboard) and the UI layer (widget_dashboard).
+
+        Parameters:
+        -----------
+        main_dashboard : Dashboard
+            The primary controller object that holds all data and logic for the application.
+        widget_dashboard : Dashboard
+            The Frame-based dashboard instance that manages and displays the UI widgets.
+        """
+        # Store references to the main (data) dashboard and the widget (UI) dashboard
+        self.main_dashboard = main_dashboard
+        self.widget_dashboard = widget_dashboard
+
+
+    ########################################################
+    # Input Function
+    ########################################################
+    def open_data(self):
+        """
+        Opens one or more data files and calls appropriate functions to ...
+        """
+        #TODO
+        #pickle_files, csv_files = InputHandling.parse_data_file_names()
+        #csv_files = ["C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/Capital One Credit.csv"]
+        csv_files = []
+        pickle_files = ["C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/2025.pkl"]
+
+        if pickle_files:
+            self.parse_pickle_files(pickle_files)
+
+        if csv_files:
+            self.parse_csv_files(csv_files)
+
+        self.update_account_cases(self.main_dashboard.all_banking_data)
+
+    ########################################################
+    # Output Functions
+    ########################################################
+    def export_data():
+        """
+
+        """
+        a = 5
+        
+    def save_data():
+        """
+
+        """
+        a = 5
+    
+    def save_data_as():
+        """
+
+        """
+        a = 5
+
+    ########################################################
+    # Input Data Manipulation - PKL
+    ########################################################
+
+    def parse_pickle_files(self, file_names: List[str]) -> None:
+        """
+        Parses the given pickle files and loads their contents into the main dashboard.
+        Ensures all required keys are present in the loaded data and formats the dataframes.
+
+        Parameters:
+        - file_names (List[str]): List of pickle file paths to be parsed.
+        """
+
+        expected_keys = ["Banking Data", "Initial Balances", "Account Types", "Investment Data"]
+
+        for file in file_names:
+            data = InputHandling.read_pkl(file)
+
+            # Ensure all expected keys are present in the data dictionary
+            missing_keys = [key for key in expected_keys if key not in data]
+            if missing_keys:
+                messagebox.showwarning(f"Missing expected keys in {file}: {', '.join(missing_keys)}")
+                continue
+            
+            # Extract data from the loaded dictionary
+            banking_data        = data["Banking Data"]
+            investment_data     = data["Investment Data"]
+            initial_balances    = data["Initial Balances"]
+            account_types       = data["Account Types"]
+
+            # Rename columns in initial_balances DataFrame
+            initial_balances = initial_balances.rename(columns = {"Initial Value": "Balance", "Initial Date": "Date"})
+
+            # Format the dataframes
+            banking_data        = DataFrameFormatting.format_old_dataframe(banking_data, currency_factor=1)
+            investment_data     = DataFrameFormatting.format_old_dataframe(investment_data, currency_factor=1)
+            initial_balances    = DataFrameFormatting.format_old_dataframe(initial_balances, currency_factor=1)
+
+            # Merge the new data with the main_dashboard dataframes
+            self.main_dashboard.all_banking_data = self._merge_dataframes(banking_data, 
+                                                                          self.main_dashboard.all_banking_data, 
+                                                                          case=1)
+            self.main_dashboard.all_investment_data = self._merge_dataframes(investment_data, 
+                                                                             self.main_dashboard.all_investment_data, 
+                                                                             case=2)
+            self.main_dashboard.initial_balances = self._merge_dataframes(initial_balances, 
+                                                                          self.main_dashboard.initial_balances, 
+                                                                          case=3)
+                
+            #TODO
+            self.main_dashboard.account_cases = account_types
+
+    def _merge_dataframes(self, new_df: pd.DataFrame, current_df: pd.DataFrame, case: int) -> pd.DataFrame:
+        """
+        Merges a new DataFrame with the current DataFrame using expected matching columns.
+
+        Parameters:
+        - new_df (pd.DataFrame): The new data to merge.
+        - current_df (pd.DataFrame): The existing data to merge with.
+        - case (int): The case number used to fetch the expected matching columns.
+
+        Returns:
+        - pd.DataFrame: The merged DataFrame.
+        """
+        matching_columns = self.get_expected_matching_columns(case=case)
+        return DataManager.join_df(new_df, current_df, matching_columns)
+
+    ########################################################
+    # Input Data Manipulation - CSV
+    ########################################################
+
+    def parse_csv_files(self, file_names: List[str]) -> None:
+        """
+        Parses the given CSV files, formats them, and merges them into the current DataFrame in the dashboard.
+
+        Parameters:
+        - file_names (List[str]): List of CSV file paths to be parsed.
+        """
+
+        for file in file_names:
+            df = InputHandling.read_csv(file)
+
+            if not df.empty:
+                account_name = os.path.basename(file).split(".")[0]
+                
+                current_df = self.get_current_df()
+
+                # Format the new DataFrame
+                new_df, case = DataFrameFormatting.format_new_dataframe(df, current_df.columns, account_name)
+
+                # Update account cases if necessary
+                if account_name not in self.main_dashboard.account_cases:
+                    self.main_dashboard.account_cases[account_name] = case
+
+                # Get the expected matching columns based on the case
+                matching_columns = self._get_matching_columns_based_on_case(current_df)
+
+                # Merge the new data with the current DataFrame
+                current_df = DataManager.join_df(new_df, current_df, matching_columns)
+
+                # Update the current DataFrame in the dashboard
+                self.update_current_df(current_df)
+
+    def _get_matching_columns_based_on_case(self, current_df: pd.DataFrame) -> List[str]:
+        """
+        Returns the expected matching columns based on the case and the current DataFrame structure.
+
+        Parameters:
+        - current_df (pd.DataFrame): The DataFrame to be updated.
+
+        Returns:
+        - List[str]: List of matching column headers.
+        """
+        if 'Payee' in current_df.columns:
+            return self.get_expected_matching_columns(case=1)
+        else:
+            return self.get_expected_matching_columns(case=2)
+
+    ########################################################
+    # DataFrame Update Functions
+    ########################################################
+    def get_current_df(self) -> Optional[pd.DataFrame]:
+        """
+        Returns the DataFrame currently being displayed (either 'Banking' or 'Investment').
+
+        Returns:
+        - pd.DataFrame: The DataFrame corresponding to the currently selected table.
+        """
+        # Dictionary for table to DataFrame mapping
+        table_to_df = {
+            'Banking': self.main_dashboard.all_banking_data,
+            'Investment': self.main_dashboard.all_investment_data
+        }
+        
+        # Return the DataFrame for the currently selected table
+        return table_to_df.get(self.main_dashboard.table_to_display, None)
+        
+    def update_current_df(self, df: pd.DataFrame) -> None:
+        """
+        Updates the DataFrame for the currently selected table (either 'Banking' or 'Investment').
+
+        Parameters:
+        - df (pd.DataFrame): The DataFrame to update the current table with.
+        """
+        # Dictionary for table to DataFrame setter
+        table_to_setter = {
+            'Banking': lambda: setattr(self.main_dashboard, 'all_banking_data', df),
+            'Investment': lambda: setattr(self.main_dashboard, 'all_investment_data', df)
+        }
+
+        # Set the DataFrame for the current table
+        table_to_setter.get(self.main_dashboard.table_to_display, lambda: None)()
+        
+        # Optional TODO for finalizing data updates
+        # self.finalizeDataUpdate(df)
+
+    def get_expected_headers(self) -> list[str]:
+        """
+        Returns the expected headers based on the currently selected table ('Banking' or 'Investments').
+
+        Returns:
+        - list[str]: A list of column headers for the currently selected table.
+        """
+        # Dictionary for table to headers mapping
+        table_to_headers = {
+            'Banking': list(self.main_dashboard.banking_column_widths),
+            'Investments': list(self.main_dashboard.investment_column_widths)
+        }
+
+        # Return the headers for the current table, or an empty list if not found
+        return table_to_headers.get(self.main_dashboard.table_to_display, [])
+
+    def get_expected_matching_columns(self, case: int) -> list[str]:
+        """
+        Returns a list of expected columns to match based on the provided case number.
+
+        Parameters:
+        - case (int): The case number that determines the expected columns for matching.
+
+        Returns:
+        - list[str]: A list of column names that should be used for matching in the specified case.
+
+        This method returns different sets of expected column headers based on the case parameter:
+        - Case 1: Returns columns for banking transactions.
+        - Case 2: Returns columns for investment transactions.
+        - Case 3: Returns a simpler set of columns for accounts.
+        """
+        # Return the expected matching columns based on the case number
+        if case == 1:
+            return ['Date', 'Description', 'Payment', 'Deposit', 'Account']
+        elif case == 2:
+            return ['Date', 'Account', 'Action', 'Asset', 'Symbol', 'Units']
+        elif case == 3:
+            return ['Account', 'Date']
+
+    def update_account_cases(self, df: pd.DataFrame) -> None:
+        #TODO Move
+        """
+        Updates the account cases by categorizing each unique account in the given DataFrame.
+        The categorization result is stored in the main_dashboard's account_cases dictionary.
+
+        Parameters:
+        - df (pd.DataFrame): The DataFrame containing transaction data, including the 'Account' column.
+
+        This method updates the 'account_cases' dictionary in the main_dashboard by categorizing each account
+        found in the 'Account' column of the provided DataFrame using the categorize_account method.
+        """
+        # Loop through each unique account in the 'Account' column and categorize it
+        for account in df['Account'].unique():
+            account_df = df[df['Account'] == account]
+            # Assign the categorized account type to the account in the main_dashboard
+            self.main_dashboard.account_cases[account] = DataFrameFormatting.categorize_account(account_df)
+
+    
+    ########################################################
+    # Modify Entries
+    ########################################################
+    def add_entry(self):
+        """
+
+        """
+        a = 5
+
+    def edit_entry(self):
+        """
+
+        """
+        a = 5
+
+    def delete_entry(self):
+        """
+
+        """
+        a = 5
+
+    
+ 
+    ########################################################
+    # Table Widget Manipulation
+    ########################################################   
+    def update_table(self):
+        """
+
+        """
+        a = 5
+        
+    def sort_table_by_column(self):
+        """
+
+        """
+        a = 5
+            
+    def toggle_button_states(self):
+        """
+
+        """
+        a = 5
+    
+    def filter_entries(self):
+        """
+
+        """
+        a = 5
+
+    def switch_account_view(self):
+        """
+
+        """
+        a = 5
+    
+    def track_bank_balances(self):
+        """
+
+        """
+        a = 5
+           
+    def update_balances_in_dataframe(self):
+        """
+
+        """
+        a = 5
+        
+    def calculate_alances_by_type(self):
+        """
+
+        """
+        a = 5
+    
+    def show_right_click_table_menu(self):
+        """
+
+        """
+        a = 5
+
+    def filter_table_by_date(self):
+        """
+
+        """
+        a = 5
+    
+    def edit_cell(self):
+        """
+
+        """
+        a = 5
+    
+    def select_all_rows(self):
+        """
+
+        """
+        a = 5
+            
+    def clear_table(self):
+        """
+
+        """
+        a = 5
+
+    def smooth_scroll(self):
+        """
+
+        """
+        a = 5
+
+    ########################################################
+    # Sidebar Manipulation
+    ########################################################
+    def update_sidebar(self):
+        """
+
+        """
+        a = 5
+
+    ########################################################
+    # Get lists of items (actions/categories/payees/assets/accounts)
+    ########################################################
+
+    def get_payees(self):
+        """
+
+        """
+        a = 5   
+          
+    def get_categories(self):
+        """
+
+        """
+        a = 5 
+
+    def get_assets(self):
+        """
+
+        """
+        a = 5 
+
+    def get_investment_actions(self):
+        """
+
+        """
+        a = 5
+
+    def get_investment_accounts(self):
+        """
+
+        """
+        a = 5
+    
+    def get_banking_accounts(self):
+        """
+
+        """
+        a = 5
+
+    def manage_items(self):
+        """
+
+        """
+        a = 5
+
+    ########################################################
+    # Options Window
+    ########################################################
+    def view_options(self):
+        """
+
+        """
+        a = 5
+
+    ########################################################
+    # Reports Display
+    ########################################################
+    def display_reports(self):
+        """
+
+        """
+        a = 5
+    
+    ########################################################
+    # Search Functions
+    ########################################################
+    def search_data(self):
+        """
+
+        """
+        a = 5
+        
+    def search_transactions(self):
+        """
+
+        """
+        a = 5   
+
+    def open_advanced_search(self):
+        """
+
+        """
+        a = 5
+        
+
+    
+    
+class Dashboard(tk.Frame):
+    def __init__(self, master=None, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        
+        self.master = master  # Reference to the FinanceTracker (Main Window)
+        
+        self.ui_manager = DashboardUI(parent_dashboard=self, master=self)
+        self.ui_actions = DashboardActions(self, self.ui_manager)
+        #self.ui_actions.toggle_button_states(True)
+        
+        self.master.rowconfigure(0, weight=1)
+        self.master.columnconfigure(0, weight=1)
+        
+        self.grid(row=0, column=0, sticky="nsew") 
+        self.rowconfigure(0, weight=1)    # So row 0 grows
+        self.columnconfigure(0, weight=1)
+        
+        # Example data that might come from the Dashboard or be defined here
+        self.banking_column_widths = {
+            "No.": 40,
+            "Date": 80,
+            "Description": 350,
+            "Payee": 150,
+            "Category": 150,
+            "Payment": 70,
+            "Deposit": 70,
+            "Balance": 90,
+            "Account": 150,
+            "Note": 250, 
+        }      
+        
+        self.investment_column_widths = {
+            "No.": 50,
+            "Date": 100,
+            "Account": 350,
+            "Action": 200,
+            "Asset": 150,
+            "Symbol": 120,
+            "Units": 120,
+            "Note": 300,
+        }
+
+        self.initial_balances_columns = ['No.', 'Account', 'Date', 'Balance']
+        
+        self.day_one = "1970-1-1"
+
+        self.all_banking_data = pd.DataFrame(columns=self.banking_column_widths)
+        self.all_investment_data = pd.DataFrame(columns=self.investment_column_widths)
+        self.table_to_display = 'Banking' # Or Investments
+
+        self.initial_balances = pd.DataFrame(columns=self.initial_balances_columns)
+        self.current_balances = {}
+        self.account_cases = {}
+        
+        self.banking_categories_file  = os.path.join(os.path.dirname(__file__), "Banking_Categories.txt")
+        self.investment_assets_file   = os.path.join(os.path.dirname(__file__), "Investments_Assets.txt")
+        self.investment_actions_file  = os.path.join(os.path.dirname(__file__), "Investments_Actions.txt")
+        self.payee_file = os.path.join(os.path.dirname(__file__), "Payees.txt")
+
+        self.banking_accounts = []
+        self.investment_accounts = []
+
+        # Delay loading the saved file until UI is ready
+        #self.after(500, self.ui_actions.loadSaveFile)
+
+        self.ui_actions.open_data()
+        
+    def open_data(self) -> None:
+        """
+        Opens a data file (CSV or PKL) for parsing and loading into the application.
+    
+        Delegates the action to ui_actions.open_data().
+        """
+        self.ui_actions.open_data()
+    
+    def clear_table(self) -> None:
+        """
+        Clears all rows in the current transaction table.
+    
+        Delegates the action to ui_actions.clear_table().
+        """
+        self.ui_actions.clear_table()
+    
+    def save_data(self) -> None:
+        """
+        Saves data to a file in the default or previously used location.
+    
+        Delegates the action to ui_actions.save_data().
+        """
+        self.ui_actions.save_data()
+    
+    def save_data_as(self) -> None:
+        """
+        Saves data to a new file location chosen by the user.
+    
+        Delegates the action to ui_actions.saveDataAs().
+        """
+        self.ui_actions.save_data_as()
+    
+    def open_search(self) -> None:
+        """
+        Opens the advanced search dialog for column-by-column filtering.
+    
+        Delegates the action to ui_actions.open_advanced_search().
+        """
+        self.ui_actions.open_advanced_search()
+    
+    def select_all_rows(self) -> None:
+        """
+        Selects all rows in the transaction table.
+    
+        Delegates the action to ui_actions.select_all_rows().
+        """
+        self.ui_actions.select_all_rows()
+    
+    def delete_entry(self) -> None:
+        """
+        Deletes the currently selected transaction(s) from the table and data.
+    
+        Delegates the action to ui_actions.delete_entry().
+        """
+        self.ui_actions.delete_entry()
+
+    def add_investment_account(self) -> None:
+        """
+        Add investment account to list of investment accounts
+    
+        Delegates the action to ui_actions.manage_items().
+        """
+        self.ui_actions.manage_items('Investment Accounts')
+
+    def add_banking_account(self) -> None:
+        """
+        Add banking account to list of banking accounts
+    
+        Delegates the action to ui_actions.manage_items().
+        """
+        self.ui_actions.manage_items('Banking Accounts')
+
+    """
+    def trainClassifier(self) -> None:
+        payee_classifier, category_classifier = Classifier.trainPayeeAndCategoryClassifier(self.all_banking_data) 
+
+        predicted_payee, predicted_category = Classifier.predictTransactionLabels(
+                                                                description="Advance Auto Parts", 
+                                                                payment = 8423,
+                                                                deposit = 0, 
+                                                                account = "Capital One Credit", 
+                                                                payee_pipeline = payee_classifier, 
+                                                                category_pipeline = category_classifier
+                                                                )
+        
+    """

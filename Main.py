@@ -18,11 +18,11 @@ import pickle
 from typing import List, Tuple, Union
 
 #from Utility import Utility, Windows, Tables
-from Dashboard import Dashboard
+from NewDashboard import Dashboard
 from StyleConfig import StyleConfig
 
 pd.set_option('display.max_columns', None)
-#pd.set_option('display.max_rows', None)
+pd.set_option('display.max_rows', None)
 pd.set_option('display.float_format','{:.2f}'.format)
 
 class FinanceTracker(tk.Tk):
@@ -32,7 +32,7 @@ class FinanceTracker(tk.Tk):
         self.resizable(True, True)
         self.state('zoomed')
         
-        self.protocol("WM_DELETE_WINDOW", self.closeWindow)
+        self.protocol("WM_DELETE_WINDOW", self.close_window)
         
         self.focus_set()
         
@@ -40,7 +40,7 @@ class FinanceTracker(tk.Tk):
         self.bindShortcuts()
         
         self.save_file_loc = os.path.join(os.path.dirname(__file__), "lastSavedFile.txt")
-        self.save_file = self.readSaveFile()
+        self.save_file = self.read_save_file()
         
         self.user_settings_file = os.path.join(os.path.dirname(__file__), "user_settings.pkl")
         
@@ -54,24 +54,24 @@ class FinanceTracker(tk.Tk):
         menubar = tk.Menu(self)
         
         file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="Open", command=lambda: self.current_frame.openData(), accelerator="Ctrl+O")
-        file_menu.add_command(label="Save", command=lambda: self.current_frame.saveData(), accelerator="Ctrl+S")
-        file_menu.add_command(label="Save as", command=lambda: self.current_frame.saveDataAs(), accelerator="Ctrl+Shift+S")
-        file_menu.add_command(label="New", command=lambda: self.current_frame.clearTable(), accelerator="Ctrl+N")
+        file_menu.add_command(label="Open", command=lambda: self.current_frame.open_data(), accelerator="Ctrl+O")
+        file_menu.add_command(label="Save", command=lambda: self.current_frame.save_data(), accelerator="Ctrl+S")
+        file_menu.add_command(label="Save as", command=lambda: self.current_frame.save_data_as(), accelerator="Ctrl+Shift+S")
+        file_menu.add_command(label="New", command=lambda: self.current_frame.clear_table(), accelerator="Ctrl+N")
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.closeWindow, accelerator="Esc")
+        file_menu.add_command(label="Exit", command=self.close_window, accelerator="Esc")
         menubar.add_cascade(label="File", menu=file_menu)
         
         accounts_menu = tk.Menu(menubar, tearoff=0)
-        accounts_menu.add_command(label="Add Banking Account", command=lambda: self.current_frame.addBankingAccount())
-        accounts_menu.add_command(label="Add Investment Account", command=lambda: self.current_frame.addInvestmentAccount())
+        accounts_menu.add_command(label="Add Banking Account", command=lambda: self.current_frame.add_banking_account())
+        accounts_menu.add_command(label="Add Investment Account", command=lambda: self.current_frame.add_investment_account())
         menubar.add_cascade(label="Accounts", menu=accounts_menu)
         
         reports_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Reports", menu=reports_menu)
         
         tools_menu = tk.Menu(menubar, tearoff=0)
-        #tools_menu.add_command(label="Train Classifier", command=lambda: self.current_frame.trainClassifier(), accelerator="Ctrl+T")
+        #tools_menu.add_command(label="Train Classifier", command=lambda: self.current_frame.train_classifier(), accelerator="Ctrl+T")
         menubar.add_cascade(label="Tools", menu=tools_menu)
         
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -81,12 +81,12 @@ class FinanceTracker(tk.Tk):
     
     def bindShortcuts(self):
         """Bind keyboard shortcuts to functions."""
-        self.bind("<Control-a>", lambda event: self.current_frame.selectAllRows())
+        self.bind("<Control-a>", lambda event: self.current_frame.select_all_rows())
         #self.bind("<Control-b>")
         #self.bind("<Control-c>")
         #self.bind("<Control-d>")
         #self.bind("<Control-e>")
-        self.bind("<Control-f>", lambda event: self.current_frame.openSearch())
+        self.bind("<Control-f>", lambda event: self.current_frame.open_search())
         #self.bind("<Control-g>")
         #self.bind("<Control-h>")
         #self.bind("<Control-i>")
@@ -94,38 +94,38 @@ class FinanceTracker(tk.Tk):
         #self.bind("<Control-k>")
         #self.bind("<Control-l>")
         #self.bind("<Control-m>",)
-        self.bind("<Control-n>", lambda event: self.current_frame.clearTable())
-        self.bind("<Control-o>", lambda event: self.current_frame.openData())
+        self.bind("<Control-n>", lambda event: self.current_frame.clear_table())
+        self.bind("<Control-o>", lambda event: self.current_frame.open_data())
         #self.bind("<Control-p>")
         #self.bind("<Control-q>")
         #self.bind("<Control-r>")
-        self.bind("<Control-s>", lambda event: self.current_frame.saveData())
-        self.bind("<Control-S>", lambda event: self.current_frame.saveDataAs())
-        self.bind("<Control-t>", lambda event: self.current_frame.trainClassifier())
+        self.bind("<Control-s>", lambda event: self.current_frame.save_data())
+        self.bind("<Control-S>", lambda event: self.current_frame.save_data_as())
+        #self.bind("<Control-t>", lambda event: self.current_frame.train_classifier())
         #self.bind("<Control-u>", lambda event: self.updateData())
         #self.bind("<Control-v>")
-        self.bind("<Control-w>", lambda event: self.closeWindow())
+        self.bind("<Control-w>", lambda event: self.close_window())
         #self.bind("<Control-x>")
         #self.bind("<Control-y>")
         #self.bind("<Control-z>")
         
-        self.bind("<Escape>",    lambda event: self.closeWindow())
+        self.bind("<Escape>",    lambda event: self.close_window())
 
         # Bind Delete key to deleteTransaction only if a row is selected
-        self.bind("<Delete>", lambda event: self.current_frame.deleteTransaction())
+        self.bind("<Delete>", lambda event: self.current_frame.delete_entry())
         
         return        
       
-    def closeWindow(self):
+    def close_window(self):
         """Prompt user to save before exiting."""
         #TODO UNDO
         #TODO Doc string
         #if not self.income_data.empty or not self.expenses_data.empty:
         #    if messagebox.askyesno("Save State", "Would you like to save the financial data before exiting?"):
-        #        self.saveState()
+        #        self.save_state()
         self.destroy()
         
-    def readSaveFile(self):
+    def read_save_file(self):
         try:
             with open(self.save_file_loc, 'r') as f:
                 save_file = f.readlines()
@@ -133,7 +133,7 @@ class FinanceTracker(tk.Tk):
         except:
             return ''
     
-    def changeSaveFile(self):
+    def change_save_file(self):
         try:
             with open(self.save_file_loc, 'w') as f:
                 f.write(self.save_file)
