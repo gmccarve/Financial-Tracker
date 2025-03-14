@@ -137,19 +137,127 @@ class InputHandling:
         
 
 class OutputHandling:
-    @staticmethod
-    def export_data():
-        """
-
-        """
-        a = 5
+    """
+    A utility class responsible for handling file output operations such as export to excel (.xlsx) and saving to pickle (.pkl) files.
     
+    This class provides methods to:
+    - Open a file dialog for selecting .xlsx or .pkl files.
+    - Read CSV files into DataFrames.
+    - Read pickle files into Python dictionaries containing financial data.
+
+    It ensures proper error handling for file loading and provides user-friendly messages if the file format is unsupported or if any errors occur during the reading process. The methods are designed to simplify the file loading process by managing different types of input files in a consistent manner.
+    """
     @staticmethod
-    def save_data():
+    def save_data(banking_data: pd.DataFrame, 
+                  investment_data: pd.DataFrame, 
+                  initial_balances: dict, 
+                  save_file: str = '', 
+                  save_as: bool = False
+                  ) -> Optional[str]:
+        """
+        Handles saving or exporting the data to either an Excel or Pickle file based on user input.
+        
+        Parameters:
+            banking_data (pd.DataFrame): Banking transaction data.
+            investment_data (pd.DataFrame): Investment transaction data.
+            initial_balances (dict): Initial balances for each account.
+            save_file (str, optional): The path to the file to save to. If empty, prompts the user.
+            save_as (bool, optional): If True, prompts the user to choose a new file to save as.
+
+        Returns: 
+            str: The path of the saved file, or an empty string if the save operation failed.
+        """
+        # Determine file path (either default or prompted if save_as is True)
+        file_path = save_file if not save_as else filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel Files", "*.xlsx"), ("Pickle Files", "*.pkl")])
+        
+        # User canceled the file selection dialog
+        if not file_path:
+            return ''
+
+        # Determine the file extension and select the appropriate saving function
+        file_ext = os.path.splitext(file_path)[-1].lower()
+
+        save_function = {
+            '.pkl': OutputHandling.save_to_pickle,
+            '.xlsx': OutputHandling.save_to_excel
+        }.get(file_ext)
+
+        if not save_function:
+            return ''  # Invalid file extension
+
+        # Call the selected save function
+        save_successful = save_function(banking_data, investment_data, initial_balances, file_path)
+
+        # Return the file path if save was successful, otherwise return an empty string
+        return file_path if save_successful else ''
+          
+    @staticmethod
+    def save_to_pickle(banking_data: pd.DataFrame, investment_data: pd.DataFrame, initial_balances: dict, file_path: str) -> bool:
+        """
+        Saves the provided DataFrames and dictionary to a pickle file.
+
+        This method serializes the 'Banking Data', 'Investment Data', and 'Initial Balances' into a dictionary
+        and saves it as a pickle file. It provides feedback through message boxes to inform the user whether
+        the save operation was successful or if an error occurred.
+
+        Parameters:
+        - banking_data (pd.DataFrame): The DataFrame containing banking transaction data.
+        - investment_data (pd.DataFrame): The DataFrame containing investment transaction data.
+        - initial_balances (dict): The dictionary containing the initial balances for each account.
+        - file_path (str): The file path where the pickle file should be saved.
+
+        Returns:
+        - bool: Returns True if the save was successful, False otherwise.
+        """
+        
+        try:
+            with open(file_path, "wb") as f:
+                pickle.dump(
+                            {"Banking Data": banking_data, 
+                             "Initial Balances": initial_balances, 
+                             "Investment Data": investment_data
+                             }, f)
+        
+            messagebox.showinfo("Save Complete", f"Data saved to {file_path}")  
+        
+            return True
+        
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Failed to save data: {e}")
+            return False
+
+    @staticmethod
+    def save_to_excel(banking_data: pd.DataFrame, investment_data: pd.DataFrame, initial_balances: dict, file_path: str) -> bool:
+        """
+        Saves the provided DataFrames and dictionary to an Excel (.xlsx) file.
+
+        This method writes the 'Banking Data', 'Investment Data', and 'Initial Balances' into separate sheets
+        of an Excel file. It provides feedback through message boxes to inform the user whether
+        the save operation was successful or if an error occurred.
+
+        Parameters:
+        - banking_data (pd.DataFrame): The DataFrame containing banking transaction data.
+        - investment_data (pd.DataFrame): The DataFrame containing investment transaction data.
+        - initial_balances (dict): The dictionary containing the initial balances for each account.
+        - file_path (str): The file path where the Excel file should be saved.
+
+        Returns:
+        - bool: Returns True if the save was successful, False otherwise.
         """
 
-        """
-        a = 5
+        try:
+            with pd.ExcelWriter(file_path) as writer:
+                banking_data.to_excel(writer, sheet_name="Banking Transactions", index=False)
+                investment_data.to_excel(writer, sheet_name="Investments", index=False)
+                initial_balances.to_excel(writer, sheet_name="Initial Balances", index=False)
+                
+            messagebox.showinfo("Export Complete", f"Data saved to {file_path}")
+
+            return True
+        
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Failed to save data: {e}")
+            return False      
         
 
 class DataManager:
@@ -290,7 +398,7 @@ class DataFrameFormatting:
         df = DataFrameFormatting.add_account_column(df, account_name)
         df = DataFrameFormatting.format_old_dataframe(df, currency_factor=100)
 
-        case = DataFrameFormatting.categorize_account(df)
+        case = AccountManager.categorize_account(df)
 
         return df, case
 
@@ -441,6 +549,9 @@ class DataFrameFormatting:
 
         return df
     
+    
+
+class AccountManager:
     @staticmethod
     def categorize_account(df: pd.DataFrame) -> str:
         """
@@ -477,7 +588,24 @@ class DataFrameFormatting:
             return "Type 4"
         else:
             return "Type 0"
+    
+    @staticmethod  
+    def update_account_cases(df: pd.DataFrame) -> dict[str: str]:
+        """
+        Identifies the account cases by categorizing each unique account in the given DataFrame.
+        The categorization result is stored in the main_dashboard's account_cases dictionary.
 
+        Parameters:
+        - df (pd.DataFrame): The DataFrame containing transaction data, including the 'Account' column.
+
+        Returns:
+        dict[str: str]: Dictionary off accounts and their respective types
+
+        """
+        account_df = {}
+        for account in df['Account'].unique():
+            account_df = df[df['Account'] == account]
+        return account_df
 
 
 
@@ -1189,19 +1317,14 @@ class DashboardActions:
         self.main_dashboard = main_dashboard
         self.widget_dashboard = widget_dashboard
 
-
     ########################################################
     # Input Function
     ########################################################
-    def open_data(self):
+    def open_data(self) -> None:
         """
         Opens one or more data files and calls appropriate functions to ...
         """
-        #TODO
-        #pickle_files, csv_files = InputHandling.parse_data_file_names()
-        #csv_files = ["C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/Capital One Credit.csv"]
-        csv_files = []
-        pickle_files = ["C:/Users/Admin/OneDrive/Desktop/Documents/Budget/2025/2025.pkl"]
+        pickle_files, csv_files = InputHandling.parse_data_file_names()
 
         if pickle_files:
             self.parse_pickle_files(pickle_files)
@@ -1211,31 +1334,107 @@ class DashboardActions:
 
         self.update_account_cases(self.main_dashboard.all_banking_data)
 
+    def load_save_file(self) -> None:
+        """
+        
+        """
+        self.parse_pickle_files([self.main_dashboard.save_file])
+
     ########################################################
     # Output Functions
     ########################################################
-    def export_data():
+    def export_data(self, event: tk.Event | None = None) -> None:
         """
-
-        """
-        a = 5
-        
-    def save_data():
-        """
-
-        """
-        a = 5
+        Exports transaction data to an Excel file.
     
-    def save_data_as():
+        Uses the OutputHandling.export_data method to prompt for an Excel (.xlsx) save location,
+        then writes the DataFrames to separate sheets.
+    
+        Parameters
+        ----------
+        event : tk.Event | None, optional
+            An optional Tkinter event object, allowing this function to be bound to GUI events. 
+            Defaults to None.
+    
+        Returns
+        -------
+        None
+            The exported file is saved to disk, with no return value needed.
         """
-
+        # Pass a copy of the data and balances to ensure we don't accidentally mutate the original.
+        tmp = OutputHandling.save_data(
+            self.main_dashboard.all_banking_data.copy(),
+            self.main_dashboard.all_investment_data.copy(),
+            self.main_dashboard.initial_balances.copy(),
+            save_file = "", 
+            save_as = True
+        )    
+        
+    def save_data(self, event: tk.Event | None = None) -> None:
         """
-        a = 5
+        Saves the current data to a .pkl file.
+    
+        Uses DataManager.saveData to write the main_dashboard's all_banking_data, initial_account_balances,
+        and account_cases to a pickle file. Updates the save_file path accordingly and then
+        records it to disk via changeSaveFile().
+    
+        Parameters
+        ----------
+        event : tk.Event | None, optional
+            An optional Tkinter event object, allowing this function to be bound to GUI events. 
+            Defaults to None.
+    
+        Returns
+        -------
+        None
+            The save file is updated on disk, with no return value needed.
+        """
+        # Use the existing save_file path in main_dashboard.master, or prompt user if empty.
+        new_save_file = OutputHandling.save_data(
+            self.main_dashboard.all_banking_data.copy(),
+            self.main_dashboard.all_investment_data.copy(),
+            self.main_dashboard.initial_balances.copy(),
+            save_file=self.main_dashboard.save_file,
+            save_as = False
+        )
+        # Write the chosen file path to a tracking file for future reference
+        if not new_save_file:
+            self.main_dashboard.change_save_file(new_save_file)
+    
+    def save_data_as(self, event: tk.Event | None = None) -> None:
+        """
+        Saves the current data to a new .pkl file, effectively a 'Save As' operation.
+    
+        Uses DataManager.saveData to open a file dialog for a new save location, writes
+        main_dashboard's data and related info to pickle, and updates the application's
+        tracking of the save_file path.
+    
+        Parameters
+        ----------
+        event : tk.Event | None, optional
+            An optional Tkinter event object, allowing this function to be bound to GUI events.
+            Defaults to None.
+    
+        Returns
+        -------
+        None
+            The data is saved to a user-specified file, with no return value.
+        """
+        # Force user to pick a new file name by passing an empty 'new_file' arg
+        new_save_file = OutputHandling.save_data(
+            self.main_dashboard.all_banking_data.copy(),
+            self.main_dashboard.all_investment_data.copy(),
+            self.main_dashboard.initial_balances.copy(),
+            save_file='', 
+            save_as = True
+        )
+        # Update the last saved file record
+        if not new_save_file:
+            self.main_dashboard.change_save_file(new_save_file)
 
     ########################################################
     # Input Data Manipulation - PKL
     ########################################################
-
     def parse_pickle_files(self, file_names: List[str]) -> None:
         """
         Parses the given pickle files and loads their contents into the main dashboard.
@@ -1245,7 +1444,7 @@ class DashboardActions:
         - file_names (List[str]): List of pickle file paths to be parsed.
         """
 
-        expected_keys = ["Banking Data", "Initial Balances", "Account Types", "Investment Data"]
+        expected_keys = ["Banking Data", "Initial Balances", "Investment Data"]
 
         for file in file_names:
             data = InputHandling.read_pkl(file)
@@ -1260,7 +1459,6 @@ class DashboardActions:
             banking_data        = data["Banking Data"]
             investment_data     = data["Investment Data"]
             initial_balances    = data["Initial Balances"]
-            account_types       = data["Account Types"]
 
             # Rename columns in initial_balances DataFrame
             initial_balances = initial_balances.rename(columns = {"Initial Value": "Balance", "Initial Date": "Date"})
@@ -1281,8 +1479,8 @@ class DashboardActions:
                                                                           self.main_dashboard.initial_balances, 
                                                                           case=3)
                 
-            #TODO
-            self.main_dashboard.account_cases = account_types
+            # Update account types
+            self.main_dashboard.account_cases = AccountManager.update_account_cases(self.main_dashboard.all_banking_data)
 
     def _merge_dataframes(self, new_df: pd.DataFrame, current_df: pd.DataFrame, case: int) -> pd.DataFrame:
         """
@@ -1302,7 +1500,6 @@ class DashboardActions:
     ########################################################
     # Input Data Manipulation - CSV
     ########################################################
-
     def parse_csv_files(self, file_names: List[str]) -> None:
         """
         Parses the given CSV files, formats them, and merges them into the current DataFrame in the dashboard.
@@ -1427,25 +1624,6 @@ class DashboardActions:
         elif case == 3:
             return ['Account', 'Date']
 
-    def update_account_cases(self, df: pd.DataFrame) -> None:
-        #TODO Move
-        """
-        Updates the account cases by categorizing each unique account in the given DataFrame.
-        The categorization result is stored in the main_dashboard's account_cases dictionary.
-
-        Parameters:
-        - df (pd.DataFrame): The DataFrame containing transaction data, including the 'Account' column.
-
-        This method updates the 'account_cases' dictionary in the main_dashboard by categorizing each account
-        found in the 'Account' column of the provided DataFrame using the categorize_account method.
-        """
-        # Loop through each unique account in the 'Account' column and categorize it
-        for account in df['Account'].unique():
-            account_df = df[df['Account'] == account]
-            # Assign the categorized account type to the account in the main_dashboard
-            self.main_dashboard.account_cases[account] = DataFrameFormatting.categorize_account(account_df)
-
-    
     ########################################################
     # Modify Entries
     ########################################################
@@ -1467,8 +1645,6 @@ class DashboardActions:
         """
         a = 5
 
-    
- 
     ########################################################
     # Table Widget Manipulation
     ########################################################   
@@ -1706,6 +1882,11 @@ class Dashboard(tk.Frame):
         self.initial_balances = pd.DataFrame(columns=self.initial_balances_columns)
         self.current_balances = {}
         self.account_cases = {}
+
+        self.save_file_loc = os.path.join(os.path.dirname(__file__), "lastSavedFile.txt")
+        self.save_file = self.read_save_file()
+        
+        self.user_settings_file = os.path.join(os.path.dirname(__file__), "user_settings.pkl")
         
         self.banking_categories_file  = os.path.join(os.path.dirname(__file__), "Banking_Categories.txt")
         self.investment_assets_file   = os.path.join(os.path.dirname(__file__), "Investments_Assets.txt")
@@ -1716,9 +1897,24 @@ class Dashboard(tk.Frame):
         self.investment_accounts = []
 
         # Delay loading the saved file until UI is ready
-        #self.after(500, self.ui_actions.loadSaveFile)
+        self.after(500, self.ui_actions.load_save_file)
 
-        self.ui_actions.open_data()
+    def read_save_file(self):
+        try:
+            with open(self.save_file_loc, 'r') as f:
+                save_file = f.readlines()
+            return save_file[0]
+        except:
+            return ''
+        
+    def change_save_file(self, file_path):
+        self.save_file = file_path
+        try:
+            with open(self.save_file_loc, 'w') as f:
+                f.write(self.save_file)
+            return
+        except:
+            return
         
     def open_data(self) -> None:
         """
@@ -1751,6 +1947,14 @@ class Dashboard(tk.Frame):
         Delegates the action to ui_actions.saveDataAs().
         """
         self.ui_actions.save_data_as()
+
+    def export_data(self) -> None:
+        """
+        Saves data to a new file location chosen by the user.
+    
+        Delegates the action to ui_actions.saveDataAs().
+        """
+        self.ui_actions.export_data()
     
     def open_search(self) -> None:
         """

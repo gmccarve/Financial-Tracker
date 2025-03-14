@@ -39,11 +39,6 @@ class FinanceTracker(tk.Tk):
         self.initMenuBar()
         self.bindShortcuts()
         
-        self.save_file_loc = os.path.join(os.path.dirname(__file__), "lastSavedFile.txt")
-        self.save_file = self.read_save_file()
-        
-        self.user_settings_file = os.path.join(os.path.dirname(__file__), "user_settings.pkl")
-        
         self.current_frame = Dashboard(self)
         self.current_frame.grid(row=0, column=0, sticky="nsew")
         
@@ -85,7 +80,7 @@ class FinanceTracker(tk.Tk):
         #self.bind("<Control-b>")
         #self.bind("<Control-c>")
         #self.bind("<Control-d>")
-        #self.bind("<Control-e>")
+        self.bind("<Control-e>", lambda event: self.current_frame.export_data())
         self.bind("<Control-f>", lambda event: self.current_frame.open_search())
         #self.bind("<Control-g>")
         #self.bind("<Control-h>")
@@ -104,7 +99,7 @@ class FinanceTracker(tk.Tk):
         #self.bind("<Control-t>", lambda event: self.current_frame.train_classifier())
         #self.bind("<Control-u>", lambda event: self.updateData())
         #self.bind("<Control-v>")
-        self.bind("<Control-w>", lambda event: self.close_window())
+        self.bind("<Control-w>", lambda event: self.current_frame.close_window())
         #self.bind("<Control-x>")
         #self.bind("<Control-y>")
         #self.bind("<Control-z>")
@@ -114,8 +109,8 @@ class FinanceTracker(tk.Tk):
         # Bind Delete key to deleteTransaction only if a row is selected
         self.bind("<Delete>", lambda event: self.current_frame.delete_entry())
         
-        return        
-      
+        return
+    
     def close_window(self):
         """Prompt user to save before exiting."""
         #TODO UNDO
@@ -124,22 +119,6 @@ class FinanceTracker(tk.Tk):
         #    if messagebox.askyesno("Save State", "Would you like to save the financial data before exiting?"):
         #        self.save_state()
         self.destroy()
-        
-    def read_save_file(self):
-        try:
-            with open(self.save_file_loc, 'r') as f:
-                save_file = f.readlines()
-            return save_file[0]
-        except:
-            return ''
-    
-    def change_save_file(self):
-        try:
-            with open(self.save_file_loc, 'w') as f:
-                f.write(self.save_file)
-            return
-        except:
-            return
         
         
 if __name__ == "__main__":
