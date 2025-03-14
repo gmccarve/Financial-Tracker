@@ -664,81 +664,121 @@ class Tables:
 
         """
         a = 5
-        
-class Windows:
-    @staticmethod
-    def open_relative_window(new_window, main_width: int, main_height: int, width: int, height: int) -> None:
+
+class DatePicker:
+    def __init__(self, parent: tk.Frame, initial_date: date = None, multiple_dates: date = False):
         """
-        Positions the new window relative to the main application window.
-    
-        This ensures that the new window appears slightly offset from the main window.
-    
+        A class to create a calendar window for date selection.
+
         Parameters:
-            new_window: The new Tkinter window to be positioned.
-            main_width  (int): The current width of new_window
-            main_height (int): The current height of new_window
-            width       (int): The width of the new window.
-            height      (int): The height of the new window.
-    
-        Returns:
-            None
-        """    
-        # Position new window slightly offset from the main window
-        new_x = main_width  + 250
-        new_y = main_height + 250
-    
-        new_window.geometry(f"{width}x{height}+{new_x}+{new_y}")  # Format: "WIDTHxHEIGHT+X+Y"
+            parent (Tk.Frame): The parent Tkinter window.
+            initial_date: The initial date to pre-select, if provided.
+            multiple_dates: If True, will create two calendars for start and end date selection.
+        """
+        self.parent = parent
+        self.initial_date = initial_date or date.today()
+        self.multiple_dates = multiple_dates
+        self.selected_dates = [initial_date, initial_date]  # [start_date, end_date]
+        
+    def open_calendar_window(self) -> None:
+        """
+        Opens a calendar window and allows date selection. Returns the selected date(s).
+        If multiple_dates is True, it will return both start and end dates.
+        """
+        top = tk.Toplevel(self.parent)
+        top.title("Select Date Range" if self.multiple_dates else "Select Date")
 
-    @staticmethod
-    def open_calendar_window(entry, date): 
-        # Create a Toplevel window with a calendar
-        cal_win = tk.Toplevel()
-        cal_win.title("Select Date")
-        cal_win.geometry("250x250")
+        # Open the window
+        self.open_relative_window(top, width=550, height=300)
 
-        cal = Calendar(
-            cal_win,
-            selectmode="day",
-            year=date.year,
-            month=date.month,
-            day=date.day,
-            date_pattern='yyyy-mm-dd'
+        if self.multiple_dates:
+            # Two calendars for start and end dates
+            self._create_calendar(top, "Select Start Date:", 0)
+            self._create_calendar(top, "Select End Date:", 1)
+        else:
+            # Single calendar for date selection
+            self._create_calendar(top, "Select Date:", 0)
+
+        # Confirm button to save the selection
+        confirm_button = tk.Button(top, 
+                                    text="Confirm Dates", 
+                                    command=lambda: top.destroy(), 
+                                    width=20,
+                                    relief=StyleConfig.BUTTON_STYLE
+                                    )
+        confirm_button.grid(row=2, column=0, columnspan=2, padx=10, pady=(10,20))
+
+        # Bind Enter and Escape keys
+        top.bind("<Return>", lambda event: top.destroy())
+        top.bind("<Escape>", lambda event: self.cancel_selection(top))
+
+        top.focus_set()
+
+        # Wait for the user to confirm the date selection
+        top.wait_window(top)
+        return self.selected_dates
+
+    def _create_calendar(self, parent: tk.Frame, label_text: str, idx: int) -> None:
+        """
+        Creates a calendar widget for selecting dates.
+
+        Parameters:
+            parent (tk.Frame): The parent widget (Toplevel).
+            label_text (str): The text label for the calendar (Start or End Date).
+            idx (int): The index to store the selected date (0 for start, 1 for end).
+        """
+        label = tk.Label(parent, 
+                         text=label_text, 
+                         font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
+                         bg=StyleConfig.BG_COLOR,
+                        fg=StyleConfig.TEXT_COLOR
         )
-        cal.pack(padx=10, pady=10)
+        label.grid(row=0, column=idx, sticky='ew', padx=10, pady=(10,5))
 
-        def select_date():
-            entry.delete(0, tk.END)
-            entry.insert(0, cal.get_date())
-            cal_win.destroy()
+        cal = Calendar(parent, selectmode="day", 
+                       year=self.initial_date.year, 
+                       month=self.initial_date.month,
+                       day=self.initial_date.day,
+                       date_pattern='Y-mm-dd')
+        cal.grid(row=1, column=idx, sticky='ew', padx=10, pady=(0,10))
 
-        # Buttons for confirming or canceling date selection
-        tk.Button(cal_win, text="OK", command=select_date).pack(pady=5, padx=5)
-        tk.Button(cal_win, text="Cancel", command=cal_win.destroy).pack(pady=5, padx=5)
+        # Store the selected date in the appropriate index
+        def set_selected_date():
+            self.selected_dates[idx] = self.convert_str_to_date(cal.get_date())
 
-        # Key bindings for date selection
-        cal_win.bind("<Return>", select_date)
-        cal_win.bind("<Escape>", cal_win.destroy)
-        cal_win.focus_force() 
+        # When the user selects a date, update the selected date
+        cal.bind("<<CalendarSelected>>", lambda event: set_selected_date())
+
+        # Configure sidebar grid to expand
+        parent.grid_columnconfigure(0, weight=1)
+
+    def cancel_selection(self, top: tk.Frame) -> None:
+        """
+        Closes the window and resets the selected_dates
+        """
+        self.selected_dates = [None, None]
+        top.destroy()
+
+    def convert_str_to_date(self, date_str) -> None:
+        """
+        Converts a date string (YYYY-MM-DD) to a date object.
+        """
+        year, month, day = map(int, date_str.split("-"))
+        return date(year, month, day)
+
+    def open_relative_window(self, window: tk.Frame, width: int, height: int) -> None:
+        """
+        Opens a window relative to the main application window.
+
+        Parameters:
+            window (tk.Frame): The Toplevel window to open.
+            width (int): The width of the window.
+            height (int): The height of the window.
+        """
+        window.geometry(f"{width}x{height}+{self.parent.winfo_x()+250}+{self.parent.winfo_y()+250}")
+
 
 class Utility:
-    @staticmethod
-    def get_category_types(name: str) -> Tuple[List[str], str]:
-        """
-        Retrieves category types from the appropriate file.
-    
-        Parameters:
-            name (str): If 'inc', loads income categories; otherwise, loads spending categories.
-    
-        Returns:
-            Tuple[List[str], str]: A sorted list of category names and the full path to the category file.
-        """
-        file_name = "IncomeCategories.txt" if name == 'inc' else "SpendingCategories.txt"
-        cat_file = os.path.join(os.path.dirname(__file__), file_name)
-        
-        with open(cat_file) as ff:
-            categories = [cat.strip() for cat in ff.readlines()]  # Strip newline characters
-
-        return sorted(categories), cat_file
     
     @staticmethod
     def generate_month_year_list(start_date: datetime, end_date: datetime) -> List[Tuple[int, int]]:
@@ -767,6 +807,7 @@ class Utility:
 
         return month_year_list
     
+    @staticmethod
     def format_month_year(month: int, year: int) -> datetime:
         """
         Convert a month and year into the format 'MM 'YY'.
@@ -780,6 +821,7 @@ class Utility:
         """
         return datetime(year, month, 1).strftime("%b '%y")
     
+    @staticmethod
     def format_month_last_day_year(month: int, year: int) -> datetime:
         """
         Convert a month and year into the format 'Mon 'YY'.
@@ -794,18 +836,20 @@ class Utility:
         last_day = (datetime(year, month + 1, 1) - timedelta(days=1)).day
         return datetime(year, month, last_day).strftime("%b %d, '%y")
     
-    def format_date_from_string(day: 'str') -> datetime:
+    @staticmethod
+    def format_date_from_str(day: 'str') -> date:
         """
-        Convert a month and year into the format 'Mon 'YY'.
+        Convert a str into date format. 
         
         Parameters:
-            day (str): The day in YYYY-MM-DD format
+            day (str): The day in "YYYY-MM-DD" format
             
         Returns:
-            The last day of a month given as a string in the format "MM DD 'YY"
+            A date formated string.
         """
-        new_day = day.split("-")
-        return datetime(int(new_day[0]), int(new_day[1]), int(new_day[2])).strftime("%Y-%m-%d")
+        return (lambda day: datetime(*(map(int, day.split("-")))).strftime("%Y-%m-%d"))
+
+    
     
 class TransactionManager:
     @staticmethod
@@ -1777,32 +1821,9 @@ class DashboardActions:
         if col_name == 'Date':
             self._add_date_filters(menu)
 
-        elif col_name == 'Description':
-            pass
-
-        elif col_name == 'Payee':
-            pass
-
-        elif col_name == 'Category':
-            pass
-    
-        elif col_name == 'Account':
-            pass
-
-        elif col_name == 'Action':
-            pass
-
-        elif col_name == 'Asset':
-            pass
-
-        elif col_name == 'Symbol':
-            pass
-
         elif col_name in ['Payment', 'Deposit', 'Balance', 'Units']:
             self._filter_numerical_entries(menu, col_name)
-
-        elif col_name == "Note":
-            pass
+            self._add_calendar_window(menu)
 
         # Display the context menu at the mouse cursor position
         menu.post(event.x_root, event.y_root)
@@ -1811,16 +1832,26 @@ class DashboardActions:
         """
         
         """
+        # Menu options for specified filter by number of days in the past
         quick_add_dates = [30, 60, 90, 180, 365]
-
         for date in quick_add_dates:
             menu.add_command(label=f"Show last {date} days", command=lambda date=date: self._filter_table_by_date(delta=date))
-
+        
+        # Menu options for specifying the start and end date of the filter
+        menu.add_separator()
+        menu.add_command(label="Choose date window", command=lambda: self._add_calendar_window())
+    
     def _add_calendar_window(self) -> None:
         """
         
         """
-        self
+        self.date_picker = DatePicker(self.main_dashboard.master, initial_date=date.today(), multiple_dates=True)
+        selected_dates = self.date_picker.open_calendar_window()
+
+        if selected_dates[0] and selected_dates[1]:
+            print(f"Start Date: {selected_dates[0]}, End Date: {selected_dates[1]}")
+        else:
+            print("No dates selected")
 
     def _filter_table_by_date(self, delta: int = 0):
         """
@@ -1832,8 +1863,6 @@ class DashboardActions:
             starting_date = date.today() - timedelta(days=delta)
 
             filtered_df = current_df[current_df['Date'] >= starting_date]
-
-            print (delta, starting_date)
 
             self.update_table(df = filtered_df)
 
