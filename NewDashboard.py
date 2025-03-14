@@ -135,7 +135,6 @@ class InputHandling:
             messagebox.showerror("Load Error", f"Failed to load data: {e}")
             return  {} 
         
-
 class OutputHandling:
     """
     A utility class responsible for handling file output operations such as export to excel (.xlsx) and saving to pickle (.pkl) files.
@@ -259,7 +258,6 @@ class OutputHandling:
             messagebox.showerror("Save Error", f"Failed to save data: {e}")
             return False      
         
-
 class DataManager:
     """
     A utility class for managing and manipulating DataFrames, particularly in the context of merging financial data.
@@ -342,7 +340,6 @@ class DataManager:
         """
         return pd.concat([df1, df2], ignore_index=True).drop(columns=['Index'], errors='ignore')
     
-
 class DataFrameFormatting:
     """
     A utility class for formatting and processing DataFrames related to financial data.
@@ -522,10 +519,9 @@ class DataFrameFormatting:
         # Add missing columns with empty values
         for col in expected_columns:
             if col not in df.columns:
-                if col == 'Balance':
-                    df[col] = 0
-                else:
-                    df[col] = ""
+                df[col] = ""
+
+        df['Balance'] = 0
 
         # Reorder the DataFrame to match the expected headers
         df = df[expected_columns]
@@ -549,8 +545,6 @@ class DataFrameFormatting:
 
         return df
     
-    
-
 class AccountManager:
     @staticmethod
     def categorize_account(df: pd.DataFrame) -> str:
@@ -607,29 +601,8 @@ class AccountManager:
             account_df = df[df['Account'] == account]
         return account_df
 
-
-
-    
 class Tables:
-
     @staticmethod
-    def table_style(style: ttk.Style) -> None:
-        """
-        Applies a consistent style to Treeview tables.
-    
-        Parameters:
-            style: The ttk.Style object used for configuring table appearance.
-        """
-        style.configure("Treeview", rowheight=25, font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE))  # Set row height and font
-        style.configure("Treeview.Heading", font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"))  # Bold headers
-        style.configure("Treeview.Heading", padding=(5,25), anchor='center', justify='center')
-        style.layout("Treeview.Heading", [
-                                            ("Treeheading.cell", {"sticky": "nswe"}),  # Stretches the header cell
-                                            ("Treeheading.border", {"sticky": "nswe"}),  # Ensures full stretch
-                                            ("Treeheading.padding", {"sticky": "nswe"}),  # Applies padding in all directions
-                                            ("Treeheading.label", {"sticky": "nswe"})  # Ensures text is centered in the label
-                                        ])
-
     def clear_table(tree: ttk.Treeview) -> None:
         """
         Clears all items from a Treeview widget.
@@ -638,8 +611,19 @@ class Tables:
             tree: The ttk.Treeview widget to be cleared.
         """
         tree.delete(*tree.get_children())
-        
-    def sort_table_by_column(tv:ttk.Treeview, col: 'str', reverse: bool, colors: List) -> None:
+    
+    @staticmethod
+    def select_all_rows(tree: ttk.Treeview) -> None:
+        """
+        Selects all rows in a Treeview widget
+    
+        Parameters:
+            tree: the ttk.Treeview widget 
+        """
+        tree.selection_set(tree.get_children())
+
+    @staticmethod    
+    def sort_table_by_column(tv:ttk.Treeview, col: 'str', reverse: bool) -> None:
         """Sorts a Treeview column properly, handling currency values and reapplying row colors."""
 
         def convert_value(val):
@@ -658,20 +642,21 @@ class Tables:
             tv.move(k, '', index)
     
         # Reapply banded row styling
-        Tables.apply_banded_rows(tv, colors=colors)
+        Tables.apply_banded_rows(tv)
     
         # Reverse sort next time
-        tv.heading(col, command=lambda: Tables.sortTableByColumn(tv, col, not reverse, colors))
-        
-    def apply_banded_rows(tv: ttk.Treeview, colors: list[str, str]) -> None:
+        tv.heading(col, command=lambda: Tables.sortTableByColumn(tv, col, not reverse))
+
+    @staticmethod   
+    def apply_banded_rows(tv: ttk.Treeview) -> None:
         """Recolors Treeview rows to maintain alternating row stripes after sorting."""
         for index, row in enumerate(tv.get_children('')):
             tag = "evenrow" if index % 2 == 0 else "oddrow"
             tv.item(row, tags=(tag,))
     
         # Define colors for tags
-        tv.tag_configure("evenrow", background=colors[0])
-        tv.tag_configure("oddrow", background=colors[1]) 
+        tv.tag_configure("evenrow", background=StyleConfig.BAND_COLOR_1)
+        tv.tag_configure("oddrow", background=StyleConfig.BAND_COLOR_2) 
         
 class Windows:
     @staticmethod
@@ -921,7 +906,6 @@ class TransactionManager:
         """
         a = 5
 
-
 class DashboardUI(tk.Frame):
     def __init__(self, parent_dashboard, master=None, *args, **kwargs):
         """
@@ -1059,7 +1043,7 @@ class DashboardUI(tk.Frame):
             ("Edit",        "edit.png",     self.actions_manager.edit_entry),
             ("Delete",      "delete.png",   self.actions_manager.delete_entry),
             ("Open",        "open.png",     self.actions_manager.open_data),
-            ("Balances",    "accounts.png", self.actions_manager.track_bank_balances),
+            ("Balances",    "accounts.png", lambda: self.actions_manager.update_account_balances(input=True)),
             ("Payee",       "payee.png",    lambda: self.actions_manager.manage_items("Payees")),
             ("Category",    "category.png", lambda: self.actions_manager.manage_items("Categories")),
             ("Actions",     "actions.png",  lambda: self.actions_manager.manage_items("Actions")),
@@ -1262,7 +1246,7 @@ class DashboardUI(tk.Frame):
                         fieldbackground=StyleConfig.BG_COLOR,
                         relief="flat")
         
-        Tables.apply_banded_rows(self.tree, colors=[StyleConfig.BAND_COLOR_1, StyleConfig.BAND_COLOR_2])
+        Tables.apply_banded_rows(self.tree)
         
         style.map("Treeview", 
                 background=[("selected", StyleConfig.SELECTION_COLOR)],
@@ -1317,9 +1301,9 @@ class DashboardActions:
         self.main_dashboard = main_dashboard
         self.widget_dashboard = widget_dashboard
 
-    ########################################################
-    # Input Function
-    ########################################################
+    ###################
+    # Input Functions #
+    ###################
     def open_data(self) -> None:
         """
         Opens one or more data files and calls appropriate functions to ...
@@ -1332,7 +1316,11 @@ class DashboardActions:
         if csv_files:
             self.parse_csv_files(csv_files)
 
-        self.update_account_cases(self.main_dashboard.all_banking_data)
+        if csv_files or pickle_files:
+            # Update account types
+            self.main_dashboard.account_cases = AccountManager.update_account_cases(self.main_dashboard.all_banking_data)
+
+        self.update_table()
 
     def load_save_file(self) -> None:
         """
@@ -1340,9 +1328,11 @@ class DashboardActions:
         """
         self.parse_pickle_files([self.main_dashboard.save_file])
 
-    ########################################################
-    # Output Functions
-    ########################################################
+        self.update_table()
+
+    ####################
+    # Output Functions #
+    ####################
     def export_data(self, event: tk.Event | None = None) -> None:
         """
         Exports transaction data to an Excel file.
@@ -1432,9 +1422,9 @@ class DashboardActions:
         if not new_save_file:
             self.main_dashboard.change_save_file(new_save_file)
 
-    ########################################################
-    # Input Data Manipulation - PKL
-    ########################################################
+    #################################
+    # Input Data Manipulation - PKL #
+    #################################
     def parse_pickle_files(self, file_names: List[str]) -> None:
         """
         Parses the given pickle files and loads their contents into the main dashboard.
@@ -1478,9 +1468,6 @@ class DashboardActions:
             self.main_dashboard.initial_balances = self._merge_dataframes(initial_balances, 
                                                                           self.main_dashboard.initial_balances, 
                                                                           case=3)
-                
-            # Update account types
-            self.main_dashboard.account_cases = AccountManager.update_account_cases(self.main_dashboard.all_banking_data)
 
     def _merge_dataframes(self, new_df: pd.DataFrame, current_df: pd.DataFrame, case: int) -> pd.DataFrame:
         """
@@ -1497,9 +1484,9 @@ class DashboardActions:
         matching_columns = self.get_expected_matching_columns(case=case)
         return DataManager.join_df(new_df, current_df, matching_columns)
 
-    ########################################################
-    # Input Data Manipulation - CSV
-    ########################################################
+    #################################
+    # Input Data Manipulation - CSV #
+    #################################
     def parse_csv_files(self, file_names: List[str]) -> None:
         """
         Parses the given CSV files, formats them, and merges them into the current DataFrame in the dashboard.
@@ -1547,9 +1534,9 @@ class DashboardActions:
         else:
             return self.get_expected_matching_columns(case=2)
 
-    ########################################################
-    # DataFrame Update Functions
-    ########################################################
+    ##############################
+    # DataFrame Update Functions #
+    ##############################
     def get_current_df(self) -> Optional[pd.DataFrame]:
         """
         Returns the DataFrame currently being displayed (either 'Banking' or 'Investment').
@@ -1582,8 +1569,8 @@ class DashboardActions:
         # Set the DataFrame for the current table
         table_to_setter.get(self.main_dashboard.table_to_display, lambda: None)()
         
-        # Optional TODO for finalizing data updates
-        # self.finalizeDataUpdate(df)
+        # Update the tableview widget with the current dataframe
+        self.update_table(df)
 
     def get_expected_headers(self) -> list[str]:
         """
@@ -1600,6 +1587,22 @@ class DashboardActions:
 
         # Return the headers for the current table, or an empty list if not found
         return table_to_headers.get(self.main_dashboard.table_to_display, [])
+    
+    def get_table_header_widths(self) -> dict:
+        """
+        Returns the dictionary of column headers and their widths for the tableview object.
+
+        Returns:
+        - dict: A dictionary of column headers as keys and widths as items.
+        """
+        # Dictionary for table to headers mapping
+        table_to_widths = {
+            'Banking': self.main_dashboard.banking_column_widths,
+            'Investments': self.main_dashboard.investment_column_widths
+        }
+
+        # Return the dictionary for the current table, or an empty list if not found
+        return table_to_widths.get(self.main_dashboard.table_to_display, [])
 
     def get_expected_matching_columns(self, case: int) -> list[str]:
         """
@@ -1624,9 +1627,53 @@ class DashboardActions:
         elif case == 3:
             return ['Account', 'Date']
 
-    ########################################################
-    # Modify Entries
-    ########################################################
+    ####################################
+    # Update the main Tableview widget #
+    ####################################
+    def update_table(self):
+        """
+
+        """
+        # Get the current dataframe to display
+        df = self.get_current_df()
+        column_data = self.get_table_header_widths()
+        column_headers = df.columns.tolist()
+
+        # Create the tableview object
+        self.widget_dashboard.show_transaction_table(df) 
+
+        # Add column headers
+        self.widget_dashboard.tree["columns"] = column_headers
+        self.widget_dashboard.tree.configure(show='headings')
+        
+        # Columns that will be treating as currency
+        currency_columns = [5, 6, 7] if "Payee" in column_headers else []
+
+        # Create each heading
+        for col_name in column_headers:
+            self.widget_dashboard.tree.heading(
+                col_name, 
+                text=col_name, 
+                anchor=tk.CENTER,
+                command=lambda c=col_name: Tables.sort_table_by_column(self.widget_dashboard.tree, c, False)
+            )
+            self.widget_dashboard.tree.column(col_name, width=column_data[col_name], anchor=tk.W)
+
+        # Insert new data rows
+        for index, row_data in df.iterrows():
+            formatted_row = list(row_data)
+            # Format any float columns as currency
+            for idx in currency_columns:
+                formatted_row[idx] = f"${float(formatted_row[idx]) / 100:.2f}"
+    
+            self.widget_dashboard.tree.insert("", tk.END, values=formatted_row)
+
+        # Apply banded rows
+        Tables.apply_banded_rows(self.widget_dashboard.tree)
+        
+    ############################################################
+    # Directly manipulate the entries in main Tableview widget #
+    ############################################################
     def add_entry(self):
         """
 
@@ -1645,58 +1692,31 @@ class DashboardActions:
         """
         a = 5
 
-    ########################################################
-    # Table Widget Manipulation
-    ########################################################   
-    def update_table(self):
+    def edit_cell(self, tmp):
         """
 
         """
         a = 5
-        
+
+    #############################################
+    # Sort the entries in main Tableview widget #
+    #############################################  
     def sort_table_by_column(self):
         """
 
         """
         a = 5
-            
-    def toggle_button_states(self):
-        """
 
-        """
-        a = 5
-    
-    def filter_entries(self):
-        """
-
-        """
-        a = 5
-
-    def switch_account_view(self):
-        """
-
-        """
-        a = 5
-    
-    def track_bank_balances(self):
-        """
-
-        """
-        a = 5
-           
-    def update_balances_in_dataframe(self):
-        """
-
-        """
-        a = 5
-        
-    def calculate_alances_by_type(self):
-        """
-
-        """
-        a = 5
-    
+    ###############################################
+    # Filter the entries in main Tableview widget #
+    ###############################################
     def show_right_click_table_menu(self):
+        """
+
+        """
+        a = 5
+
+    def filter_entries(self):
         """
 
         """
@@ -1707,20 +1727,30 @@ class DashboardActions:
 
         """
         a = 5
-    
-    def edit_cell(self):
+
+    ##############################
+    # Calculate account balances #
+    ##############################
+    def update_account_balances(self, input=False):
         """
 
         """
         a = 5
-    
-    def select_all_rows(self):
-        """
 
+    ###########################
+    # Miscellaneous Functions #
+    ###########################
+    def select_all_rows_in_dashboard(self, tree: ttk.Treeview) -> None:
         """
-        a = 5
-            
-    def clear_table(self):
+        Selects all rows in the Treeview widget in the dashboard.
+        Calls the select_all_rows method from the Tables class.
+        
+        Parameters:
+            tree: The ttk.Treeview widget to select all rows in.
+        """
+        Tables.select_all_rows(tree)  # Calling the static method from the Tables class
+
+    def switch_account_view(self, table_to_view):
         """
 
         """
@@ -1732,82 +1762,18 @@ class DashboardActions:
         """
         a = 5
 
-    ########################################################
-    # Sidebar Manipulation
-    ########################################################
-    def update_sidebar(self):
+    #####################
+    # Toolbar functions #
+    #####################
+    def toggle_button_states(self):
         """
 
         """
         a = 5
 
-    ########################################################
-    # Get lists of items (actions/categories/payees/assets/accounts)
-    ########################################################
-
-    def get_payees(self):
-        """
-
-        """
-        a = 5   
-          
-    def get_categories(self):
-        """
-
-        """
-        a = 5 
-
-    def get_assets(self):
-        """
-
-        """
-        a = 5 
-
-    def get_investment_actions(self):
-        """
-
-        """
-        a = 5
-
-    def get_investment_accounts(self):
-        """
-
-        """
-        a = 5
-    
-    def get_banking_accounts(self):
-        """
-
-        """
-        a = 5
-
-    def manage_items(self):
-        """
-
-        """
-        a = 5
-
-    ########################################################
-    # Options Window
-    ########################################################
-    def view_options(self):
-        """
-
-        """
-        a = 5
-
-    ########################################################
-    # Reports Display
-    ########################################################
-    def display_reports(self):
-        """
-
-        """
-        a = 5
-    
-    ########################################################
-    # Search Functions
-    ########################################################
+    ####################
+    # Search Functions #
+    ####################
     def search_data(self):
         """
 
@@ -1821,6 +1787,87 @@ class DashboardActions:
         a = 5   
 
     def open_advanced_search(self):
+        """
+
+        """
+        a = 5
+
+    #####################
+    # Sidebar functions #
+    #####################
+    def update_sidebar(self):
+        """
+
+        """
+        a = 5
+
+    def manage_items(self, action=''):
+        """
+
+        """
+        a = 5
+
+    def _update_sidebar_labels(self):
+        """
+        
+        """
+        a = 5
+
+    def _update_sidebar_listboxes(self):
+        """
+        
+        """
+        a = 5
+
+    def _get_list_of_payees(self):
+        """
+
+        """
+        a = 5   
+          
+    def _get_list_of_categories(self):
+        """
+
+        """
+        a = 5 
+
+    def _get_list_of_assets(self):
+        """
+
+        """
+        a = 5 
+
+    def _get_list_of_investment_actions(self):
+        """
+
+        """
+        a = 5
+
+    def _get_list_of_investment_accounts(self):
+        """
+
+        """
+        a = 5
+    
+    def _get_list_of_banking_accounts(self):
+        """
+
+        """
+        a = 5
+
+    ########################################################
+    # Options window
+    ########################################################
+    def view_options(self):
+        """
+
+        """
+        a = 5
+
+    ########################################################
+    # Reports Display
+    ########################################################
+    def display_reports(self):
         """
 
         """
