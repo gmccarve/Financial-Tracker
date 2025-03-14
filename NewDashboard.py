@@ -777,9 +777,233 @@ class DatePicker:
         """
         window.geometry(f"{width}x{height}+{self.parent.winfo_x()+250}+{self.parent.winfo_y()+250}")
 
+class DataSearch:
+    def __init__(self, parent: tk.Frame, dataframe: pd.DataFrame):
+        """
+        Initialize the DataSearch class with the parent window and the dataframe to search.
+        
+        Parameters:
+            parent (tk.Tk or tk.Toplevel): The parent window where the search is initiated.
+            dataframe (pd.DataFrame): The DataFrame to be searched.
+        """
+        self.parent = parent
+        self.dataframe = dataframe
+        self.search_criteria = {}
+
+    def search_data(self, search_value=None, advanced_criteria=None):
+        """
+        Search through the dataframe either by a single search value or using advanced search criteria.
+        
+        Parameters:
+            search_value (str, optional): A single value to search for. Defaults to None.
+            advanced_criteria (bool, optional): A boolean to perform an advanced, column-by-column search.
+        """
+        if search_value:
+            # Perform a basic search based on the search value in the text box
+            return self.simple_search(search_value)
+        elif advanced_criteria:
+            # Perform an advanced search based on criteria entered in the advanced search window
+            self.open_advanced_search_window()
+        
+        else:
+            return self.dataframe
+
+    def simple_search(self, search_value):
+        """
+        Filters the DataFrame based on the search value entered in the search text box.
+        
+        Parameters:
+            search_value (str): The value to search for across all columns in the DataFrame.
+        """
+        if not search_value:
+            return  # If no value, just return without filtering
+        
+        # Perform the search for the entered value across all columns
+        search_value = search_value.strip().lower()  # Case-insensitive search
+
+        # Apply the numeric matching logic for specific columns (Payment, Deposit, Balance)
+        filtered_df = self.dataframe[
+            self.dataframe.apply(lambda row: self.row_matches_single_query(row, search_value), axis=1)
+        ]
+        
+        if filtered_df.empty:
+            messagebox.showinfo("Search Results", "No matching results found.")
+            return None
+        else:
+            return filtered_df
+        
+    def row_matches_single_query(self, row, search_value):
+        """
+        Check if a row matches the search query. Handles both text and numeric matching for specific columns.
+        
+        Parameters:
+            row (pd.Series): The row to check for matching.
+            search_value (str): The value to search for.
+        
+        Returns:
+            bool: True if the row matches the search value, False otherwise.
+        """
+        for col in row.index:
+            val_str = str(row[col]).lower()
+            
+            # If the column is numeric (Payment, Deposit, Balance), use numeric matching
+            if col in ["Payment", "Deposit", "Balance"]:
+                if self.numeric_matches(row[col], search_value):
+                    return True
+            
+            # For text-based columns, check if the value contains the search term
+            if search_value in val_str:
+                return True
+        return False
+    
+    def numeric_matches(self, row_val, user_str):
+        """
+        Converts row_val (in cents) to dollars and checks if it matches the user's input (in dollars).
+        
+        Parameters:
+            row_val (float or int): The value in cents (e.g., 10000 for $100).
+            user_str (str): The value in dollars (e.g., "100.00").
+        
+        Returns:
+            bool: True if the value matches the user's input, False otherwise.
+        """
+        try:
+            # Convert cents to dollars and format to match the user input
+            num_dollars = float(row_val) / 100
+            numeric_str = f"{num_dollars:.2f}".lower()
+            return user_str.lower() in numeric_str
+        except (ValueError, TypeError):
+            return False
+
+    def advanced_search(self) -> pd.DataFrame:
+        """
+        Filters the DataFrame based on column-specific criteria entered in the advanced search window.
+
+        This method uses the search criteria for each column and applies filtering across the DataFrame.
+        
+        Parameters:
+            None
+        Returns:
+            pd.DataFrame: The filtered DataFrame based on user inputs.
+      """
+
+        if self.search_criteria:
+
+            filtered_df = self.dataframe
+
+            for col, value in self.search_criteria.items():
+                if value:  # Only apply filtering if the user has entered a value
+                    if col in ["Payment", "Deposit", "Balance"]:
+                        filtered_df = filtered_df[filtered_df.apply(lambda row: self.numeric_matches(row[col], value), axis=1)]
+                    else:
+                        filtered_df = filtered_df[filtered_df[col].astype(str).str.contains(value, case=False, na=False)]
+            
+            if filtered_df.empty:
+                messagebox.showinfo("Search Results", "No matching results found.")
+                return None
+            else:
+                return filtered_df
+            
+        else:
+            return self.dataframe
+
+    def open_advanced_search_window(self):
+        """
+        Opens the advanced search window where users can input search values for each column.
+        """
+        top = tk.Toplevel(self.parent)
+        top.title("Advanced Search")
+
+        # Open the window
+        self.open_relative_window(top, width=300, height=len(self.dataframe.columns)*30 + 60)
+    
+        ttk.Label(
+            top,
+            text="Advanced Search",
+            font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE, "bold")
+        ).pack(pady=5)
+    
+        input_frame = ttk.Frame(top)
+        input_frame.pack(fill="both", expand=True, padx=10, pady=5)
+    
+        # Build a dict of column -> (Entry widget)
+        entry_widgets = {}
+    
+        # Create an entry for each column in the DataFrame
+        for col_name in self.dataframe.columns:
+            row_frame = ttk.Frame(input_frame)
+            row_frame.pack(fill="x", pady=2)
+    
+            ttk.Label(
+                row_frame,
+                text=f"{col_name}:",
+                width=12,
+                anchor="w",
+                font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE, "bold")
+            ).pack(side=tk.LEFT)
+    
+            entry = ttk.Entry(row_frame, width=15)
+            entry.pack(side=tk.RIGHT, expand=True, fill="x")
+            entry_widgets[col_name] = entry
+    
+        def get_search_terms(event=None):
+            """
+            Collects the values from the input fields and performs the advanced search.
+            """
+            for col, entry in entry_widgets.items():
+                value = entry.get().strip()
+                if value:
+                    self.search_criteria[col] = value  # Only add criteria with a value
+
+            top.destroy()
+        
+        # Search button to confirm the advanced search
+        search_button = tk.Button(
+            top,
+            text="Search",
+            command=get_search_terms,
+            font=(StyleConfig.FONT_FAMILY, StyleConfig.BUTTON_FONT_SIZE),
+            bg=StyleConfig.BUTTON_COLOR,
+            fg=StyleConfig.TEXT_COLOR,
+            relief=StyleConfig.BUTTON_STYLE
+        )
+        search_button.pack(pady=10)
+
+        # Bind Enter and Escape keys
+        top.bind("<Return>", lambda event: get_search_terms(event))
+        top.bind("<Escape>", lambda event: self.cancel_selection(top))
+
+        top.focus_set()
+
+        # Wait for the user to confirm the date selection
+        top.wait_window(top)
+    
+    def cancel_selection(self, top: tk.Frame) -> None:
+        """
+        Closes the window and resets the selected_dates
+        
+        Parameters:
+            top (tk.Frame): The parent tk Frame object.
+
+        Returns:
+            None
+        """
+        self.selected_dates = [None, None]
+        top.destroy()
+    
+    def open_relative_window(self, window: tk.Frame, width: int, height: int) -> None:
+        """
+        Opens a window relative to the main application window.
+
+        Parameters:
+            window (tk.Frame): The Toplevel window to open.
+            width (int): The width of the window.
+            height (int): The height of the window.
+        """
+        window.geometry(f"{width}x{height}+{self.parent.winfo_x()+250}+{self.parent.winfo_y()+250}")
+
 
 class Utility:
-    
     @staticmethod
     def generate_month_year_list(start_date: datetime, end_date: datetime) -> List[Tuple[int, int]]:
         """
@@ -1166,12 +1390,13 @@ class DashboardUI(tk.Frame):
         # Search entry
         self.search_entry = tk.Entry(self.toolbar, width=30, bg=StyleConfig.BUTTON_COLOR)
         self.search_entry.pack(side=tk.LEFT, padx=5)
-        self.search_entry.bind("<Return>", lambda event: self.actions_manager.search_transactions())
+        self.search_entry.bind("<Return>", lambda event: self.actions_manager.simple_search())
         
         # Search button
         search_button = tk.Button(self.toolbar, 
                                 text="Go",
-                                command=self.actions_manager.search_transactions, 
+                                command=self.actions_manager.simple_search, 
+                                font=StyleConfig.FONT_FAMILY,
                                 bg=StyleConfig.BUTTON_COLOR, 
                                 relief=StyleConfig.BUTTON_STYLE)
         search_button.pack(side=tk.LEFT, padx=5)
@@ -1180,7 +1405,8 @@ class DashboardUI(tk.Frame):
         # Advanced search button
         adv_search_button = tk.Button(self.toolbar, 
                                     text="Advanced Search", 
-                                    command=self.actions_manager.open_advanced_search,
+                                    command=self.actions_manager.advanced_search,
+                                    font=StyleConfig.FONT_FAMILY,
                                     bg=StyleConfig.BUTTON_COLOR, 
                                     relief=StyleConfig.BUTTON_STYLE)
         adv_search_button.pack(side=tk.LEFT, padx=5)
@@ -1357,28 +1583,64 @@ class DashboardActions:
     ###################
     def open_data(self) -> None:
         """
-        Opens one or more data files and calls appropriate functions to ...
+        Opens one or more data files and processes them accordingly.
+        
+        This function:
+        - Parses the file names for `.pkl` and `.csv` files.
+        - Calls respective parsing functions for `.pkl` and `.csv` files.
+        - Updates account type information based on the loaded data.
+        - Refreshes the table with the updated data.
+
+        Parameters
+        ----------
+        None
+            File names are gathered from the InputHandling class and passed to 
+            respective pickle and csv file parsers.
+        
+        Returns
+        -------
+        None
+            The imported file(s) are saved to disk, with no return value needed.
         """
+        # Parse file names and get lists of pickle and CSV files
         pickle_files, csv_files = InputHandling.parse_data_file_names()
 
+        # If there are pickle files, process them
         if pickle_files:
             self.parse_pickle_files(pickle_files)
 
+        # If there are CSV files, process them
         if csv_files:
             self.parse_csv_files(csv_files)
 
+        # If any files were loaded, update account type information
         if csv_files or pickle_files:
-            # Update account types
             self.main_dashboard.account_cases = AccountManager.update_account_cases(self.main_dashboard.all_banking_data)
 
+        # Refresh the displayed table with the updated data
         self.update_table()
 
     def load_save_file(self) -> None:
         """
-        
+        Loads a pre-saved pickle file and processes it.
+
+        This function uses the file path stored in `self.main_dashboard.save_file`, 
+        loads the pickle file, and refreshes the table with the loaded data.
+
+        Parameters
+        ----------
+        None
+            The save_file is read from the self.main_dashboard.save_file variable.
+
+        Returns
+        -------
+        None
+            The imported file(s) are saved to disk, with no return value needed.
         """
+        # Load the pre-saved pickle file specified in the save_file path
         self.parse_pickle_files([self.main_dashboard.save_file])
 
+        # Refresh the table with the data from the saved pickle file
         self.update_table()
 
     ####################
@@ -1696,6 +1958,13 @@ class DashboardActions:
         - Applies special formatting to currency columns.
         - Adds column headers and sorting functionality.
         - Applies banded row styling for better visual organization.
+
+        Parameters:
+            df (pd.DataFrame) | optional. The dataframe to display if provided. Otherwise
+                                            retrieve the current dataframe.
+
+        Returns
+            None
         """
         # Get the current dataframe to display
         if df.empty:
@@ -1774,6 +2043,7 @@ class DashboardActions:
     ############################################################
     # Directly manipulate the entries in main Tableview widget #
     ############################################################
+    #TODO
     def add_entry(self):
         """
 
@@ -1830,7 +2100,7 @@ class DashboardActions:
         if col_name == 'Date':
             self._add_date_filters(menu)
         elif col_name in ['Payment', 'Deposit', 'Balance', 'Units']:
-            self._filter_numerical_entries(menu, col_name)
+            self._add_numerical_filters(menu, col_name)
 
         # Display the context menu at the mouse cursor position
         menu.post(event.x_root, event.y_root)
@@ -1876,7 +2146,7 @@ class DashboardActions:
         The filter is applied by comparing the 'Date' column with the calculated start date, 
         which is the current date minus the specified delta.
         
-        Args:
+        Parameters:
             delta (int): The number of days to filter by. Only rows with a 'Date' within the last 'delta' days are included.
         """
         if delta > 0:
@@ -1898,7 +2168,7 @@ class DashboardActions:
         
         The filter is applied by comparing the 'Date' column with the specified start and end dates.
         
-        Args:
+        Parameters:
             start_date (date): The start date of the date range. Defaults to today's date.
             end_date (date): The end date of the date range. Defaults to today's date.
         """
@@ -1911,7 +2181,8 @@ class DashboardActions:
         # Update the table with the filtered data
         self.update_table(df=filtered_df)
 
-    def _filter_numerical_entries(self, column):
+    #TODO
+    def _add_numerical_filters(self, column):
         """
 
         """
@@ -1920,6 +2191,7 @@ class DashboardActions:
     ##############################
     # Calculate account balances #
     ##############################
+    #TODO
     def update_account_balances(self, input=False):
         """
 
@@ -1973,29 +2245,45 @@ class DashboardActions:
         for state, button in enumerate([4, 5, 7]):
             self.widget_dashboard.toolbar_buttons[button].config(state=button_states[state])
 
+    #TODO
     ####################
     # Search Functions #
     ####################
-    def search_entries(self) -> None:
+    def simple_search(self) -> None:
         """
 
         """
+        search_value = self.widget_dashboard.search_entry.get().strip().lower()
 
-        self
+        if search_value:
+            current_df = self.get_current_df()
 
-    def search_transactions(self):
+            search_value = self.widget_dashboard.search_entry.get().strip().lower()
+
+            search = DataSearch(self.main_dashboard.master, current_df)
+            filtered_df = search.search_data(search_value=search_value)
+
+            if filtered_df is not None and not filtered_df.empty:
+                self.update_table(df = filtered_df)
+
+        else:
+            self.update_table()
+
+
+    def advanced_search(self):
         """
 
         """
-        self 
+        current_df = self.get_current_df()
 
-    def open_advanced_search(self):
-        """
+        search = DataSearch(self.main_dashboard.master, current_df)
+        search.search_data(advanced_criteria=True)
+        filtered_df = search.advanced_search()
 
-        """
-        #self.update_table(df = pd.DataFrame())
-        self
+        if filtered_df is not None and not filtered_df.empty:
+            self.update_table(df = filtered_df)
 
+    #TODO
     #####################
     # Sidebar functions #
     #####################
@@ -2059,6 +2347,7 @@ class DashboardActions:
         """
         a = 5
 
+    #TODO
     ########################################################
     # Options window
     ########################################################
@@ -2068,6 +2357,7 @@ class DashboardActions:
         """
         a = 5
 
+    #TODO
     ########################################################
     # Reports Display
     ########################################################
