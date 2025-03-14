@@ -645,7 +645,7 @@ class Tables:
         Tables.apply_banded_rows(tv)
     
         # Reverse sort next time
-        tv.heading(col, command=lambda: Tables.sortTableByColumn(tv, col, not reverse))
+        tv.heading(col, command=lambda: Tables.sort_table_by_column(tv, col, not reverse))
 
     @staticmethod   
     def apply_banded_rows(tv: ttk.Treeview) -> None:
@@ -657,6 +657,13 @@ class Tables:
         # Define colors for tags
         tv.tag_configure("evenrow", background=StyleConfig.BAND_COLOR_1)
         tv.tag_configure("oddrow", background=StyleConfig.BAND_COLOR_2) 
+
+    @staticmethod
+    def smooth_scroll():
+        """
+
+        """
+        a = 5
         
 class Windows:
     @staticmethod
@@ -1006,7 +1013,7 @@ class DashboardUI(tk.Frame):
         listbox.config(yscrollcommand=scrollbar.set)
 
         # Bind events
-        listbox.bind("<MouseWheel>", self.actions_manager.smooth_scroll)
+        listbox.bind("<MouseWheel>", Tables.smooth_scroll)
         listbox.bind("<Double-Button-1>", lambda event, idx=idx: self.actions_manager.filter_entries(case=idx+1))
 
         self.sidebar_listboxes.append(listbox)
@@ -1547,7 +1554,7 @@ class DashboardActions:
         # Dictionary for table to DataFrame mapping
         table_to_df = {
             'Banking': self.main_dashboard.all_banking_data,
-            'Investment': self.main_dashboard.all_investment_data
+            'Investments': self.main_dashboard.all_investment_data
         }
         
         # Return the DataFrame for the currently selected table
@@ -1630,26 +1637,68 @@ class DashboardActions:
     ####################################
     # Update the main Tableview widget #
     ####################################
-    def update_table(self):
+    def update_table(self) -> None:
         """
+        Updates the main Tableview widget by configuring the table with the current data.
+        
+        This method retrieves the current DataFrame, configures the table's columns, and inserts rows 
+        into the Treeview widget. It also handles currency formatting for specified columns and 
+        applies banded rows to improve readability.
 
+        Steps:
+        - Retrieves the current DataFrame to display.
+        - Sets up the columns for the Treeview widget.
+        - Formats and inserts rows of data into the Treeview.
+        - Applies special formatting to currency columns.
+        - Adds column headers and sorting functionality.
+        - Applies banded row styling for better visual organization.
         """
         # Get the current dataframe to display
         df = self.get_current_df()
-        column_data = self.get_table_header_widths()
-        column_headers = df.columns.tolist()
 
-        # Create the tableview object
-        self.widget_dashboard.show_transaction_table(df) 
+        # Retrieve column header widths and headers
+        column_data = self.get_table_header_widths()  # Assuming this returns column widths as a dictionary
+        column_headers = df.columns.tolist()  # Get column names as list
+        
+        # Display the current table using the DataFrame
+        self.widget_dashboard.show_transaction_table(df)
 
-        # Add column headers
+        # Configure the Treeview widget to show columns
         self.widget_dashboard.tree["columns"] = column_headers
         self.widget_dashboard.tree.configure(show='headings')
         
-        # Columns that will be treating as currency
-        currency_columns = [5, 6, 7] if "Payee" in column_headers else []
+        # Identify columns that should be treated as currency
+        currency_columns = self._get_currency_columns(column_headers)
 
-        # Create each heading
+        # Create each column header and apply sorting functionality
+        self._set_column_headers(column_headers, column_data)
+
+        # Insert new data rows into the Treeview
+        self._insert_data_rows(df, currency_columns)
+
+        # Apply banded row styling to the Treeview
+        Tables.apply_banded_rows(self.widget_dashboard.tree)
+
+    def _get_currency_columns(self, column_headers: list) -> list:
+        """
+        Determines which columns should be formatted as currency.
+
+        Parameters:
+        - column_headers (list): List of column headers in the DataFrame.
+
+        Returns:
+        - list: List of column indices that should be formatted as currency.
+        """
+        return [5, 6, 7] if "Payee" in column_headers else []
+
+    def _set_column_headers(self, column_headers: list, column_data: dict) -> None:
+        """
+        Sets up the headers and column widths in the Treeview widget.
+
+        Parameters:
+        - column_headers (list): List of column headers.
+        - column_data (dict): Dictionary of column names and their corresponding widths.
+        """
         for col_name in column_headers:
             self.widget_dashboard.tree.heading(
                 col_name, 
@@ -1657,20 +1706,26 @@ class DashboardActions:
                 anchor=tk.CENTER,
                 command=lambda c=col_name: Tables.sort_table_by_column(self.widget_dashboard.tree, c, False)
             )
-            self.widget_dashboard.tree.column(col_name, width=column_data[col_name], anchor=tk.W)
+            self.widget_dashboard.tree.column(col_name, width=column_data.get(col_name, 100), anchor=tk.W)  # Default width if not in column_data
 
-        # Insert new data rows
+    def _insert_data_rows(self, df: pd.DataFrame, currency_columns: list) -> None:
+        """
+        Inserts rows of data into the Treeview widget.
+
+        Parameters:
+        - df (pd.DataFrame): The DataFrame containing the data to be inserted.
+        - currency_columns (list): List of column indices to be treated as currency.
+        """
         for index, row_data in df.iterrows():
-            formatted_row = list(row_data)
-            # Format any float columns as currency
+            formatted_row = list(row_data)  # Convert row data to a list
+            
+            # Format currency columns as dollars
             for idx in currency_columns:
-                formatted_row[idx] = f"${float(formatted_row[idx]) / 100:.2f}"
+                if idx < len(formatted_row):  # Ensure index is within bounds
+                    formatted_row[idx] = f"${float(formatted_row[idx]) / 100:.2f}"
     
             self.widget_dashboard.tree.insert("", tk.END, values=formatted_row)
 
-        # Apply banded rows
-        Tables.apply_banded_rows(self.widget_dashboard.tree)
-        
     ############################################################
     # Directly manipulate the entries in main Tableview widget #
     ############################################################
@@ -1693,15 +1748,6 @@ class DashboardActions:
         a = 5
 
     def edit_cell(self, tmp):
-        """
-
-        """
-        a = 5
-
-    #############################################
-    # Sort the entries in main Tableview widget #
-    #############################################  
-    def sort_table_by_column(self):
         """
 
         """
@@ -1740,27 +1786,25 @@ class DashboardActions:
     ###########################
     # Miscellaneous Functions #
     ###########################
-    def select_all_rows_in_dashboard(self, tree: ttk.Treeview) -> None:
+    def switch_account_view(self, table_to_view: str) -> None:
         """
-        Selects all rows in the Treeview widget in the dashboard.
-        Calls the select_all_rows method from the Tables class.
-        
+        Switches the view between 'Banking' and 'Investment' tables. 
+        If the current table is already the same as the requested table, it does nothing.
+
         Parameters:
-            tree: The ttk.Treeview widget to select all rows in.
+        - table_to_view (str): The table to switch to. Can be 'Banking' or 'Investment'.
         """
-        Tables.select_all_rows(tree)  # Calling the static method from the Tables class
+        # Check if the current table is already the one being requested
+        if self.main_dashboard.table_to_display == table_to_view:
+            return  # Do nothing if it's the same table
+        
+        # Switch to the new table
+        self.main_dashboard.table_to_display = table_to_view
 
-    def switch_account_view(self, table_to_view):
-        """
+        # Perform additional actions based on the new table, if needed
+        self.update_table()
+        
 
-        """
-        a = 5
-
-    def smooth_scroll(self):
-        """
-
-        """
-        a = 5
 
     #####################
     # Toolbar functions #
@@ -1971,14 +2015,6 @@ class Dashboard(tk.Frame):
         """
         self.ui_actions.open_data()
     
-    def clear_table(self) -> None:
-        """
-        Clears all rows in the current transaction table.
-    
-        Delegates the action to ui_actions.clear_table().
-        """
-        self.ui_actions.clear_table()
-    
     def save_data(self) -> None:
         """
         Saves data to a file in the default or previously used location.
@@ -2003,6 +2039,18 @@ class Dashboard(tk.Frame):
         """
         self.ui_actions.export_data()
     
+    def select_all_rows(self) -> None:
+        """
+        Selects all rows in the transaction table.
+        """
+        Tables.select_all_rows(self.ui_manager.tree)
+
+    def clear_table(self) -> None:
+        """
+        Clears all rows in the current transaction table.
+        """
+        Tables.clear_table(self.ui_actions.tree)
+
     def open_search(self) -> None:
         """
         Opens the advanced search dialog for column-by-column filtering.
@@ -2010,14 +2058,6 @@ class Dashboard(tk.Frame):
         Delegates the action to ui_actions.open_advanced_search().
         """
         self.ui_actions.open_advanced_search()
-    
-    def select_all_rows(self) -> None:
-        """
-        Selects all rows in the transaction table.
-    
-        Delegates the action to ui_actions.select_all_rows().
-        """
-        self.ui_actions.select_all_rows()
     
     def delete_entry(self) -> None:
         """
