@@ -411,7 +411,7 @@ class DataFrameFormatting:
         - pd.DataFrame: The sorted DataFrame with a reset index.
         """
         # Sort by 'Account' first, then by 'Date' in ascending order
-        df = df.sort_values(by=['Account', 'Date'], ascending=True, inplace=False).reset_index(drop=True)
+        df = df.sort_values(by=['Date', 'Account'], ascending=True, inplace=False).reset_index(drop=True)
         return df
 
     @staticmethod
@@ -1801,41 +1801,54 @@ class DashboardActions:
     ###############################################
     # Filter the entries in main Tableview widget #
     ###############################################
-    def show_right_click_table_menu(self, event=None):
-        """Shows the context menu based on the column clicked."""
-        # Get the column that was clicked
+    def show_right_click_table_menu(self, event=None) -> None:
+        """
+        Displays a context menu based on the column clicked in the table header.
+        
+        The menu will offer different filter options depending on the column clicked, 
+        such as filtering by date or numerical entries. The menu is displayed at 
+        the position of the mouse click.
 
-        # Check if the click happened in the header region
+        Parameters:
+            event (tk.Event, optional): The event object that triggered the right-click. Default is None.
+        """
+        # Get the region where the click occurred (header or cell)
         region = self.widget_dashboard.tree.identify_region(event.x, event.y)
 
         # If the region is not 'heading', do nothing (i.e., the click is on a cell)
         if region != "heading":
             return
 
+        # Identify the column that was clicked based on the event's x-position
         col_id = self.widget_dashboard.tree.identify_column(event.x)
         col_name = self.widget_dashboard.tree.heading(col_id, "text")
         
+        # Create a new menu object
         menu = tk.Menu(self.main_dashboard, tearoff=0)
 
-        # Determine the menu options based on the column clicked
+        # Add specific menu options based on the column clicked
         if col_name == 'Date':
             self._add_date_filters(menu)
-
         elif col_name in ['Payment', 'Deposit', 'Balance', 'Units']:
             self._filter_numerical_entries(menu, col_name)
-            self._add_calendar_window(menu)
 
         # Display the context menu at the mouse cursor position
         menu.post(event.x_root, event.y_root)
 
     def _add_date_filters(self, menu=tk.Menu) -> None:
         """
+        Adds filtering options for the 'Date' column to the context menu.
         
+        This includes predefined options to filter by a range of days (e.g., last 30, 60, 90, 180, or 365 days),
+        as well as the option to define a custom date range via a calendar window.
+        
+        Parameters:
+            menu (tk.Menu): The context menu to which date filter options are added.
         """
-        # Menu options for specified filter by number of days in the past
+        # Predefined filters for the last N days
         quick_add_dates = [30, 60, 90, 180, 365]
         for date in quick_add_dates:
-            menu.add_command(label=f"Show last {date} days", command=lambda date=date: self._filter_table_by_date(delta=date))
+            menu.add_command(label=f"Show last {date} days", command=lambda date=date: self.filter_by_delta_days(delta=date))
         
         # Menu options for specifying the start and end date of the filter
         menu.add_separator()
@@ -1843,28 +1856,60 @@ class DashboardActions:
     
     def _add_calendar_window(self) -> None:
         """
+        Opens a calendar window to allow the user to select a custom date range.
         
+        Once the user selects a start and end date, the function will apply the selected date range filter.
+        If the user cancels the selection, no filter is applied.
         """
+        # Open the date picker window to select the start and end dates
         self.date_picker = DatePicker(self.main_dashboard.master, initial_date=date.today(), multiple_dates=True)
         selected_dates = self.date_picker.open_calendar_window()
 
+        # If valid dates are selected, filter the data based on the selected date range
         if selected_dates[0] and selected_dates[1]:
-            print(f"Start Date: {selected_dates[0]}, End Date: {selected_dates[1]}")
-        else:
-            print("No dates selected")
+            self._filter_by_date_window(selected_dates[0], selected_dates[1])
 
-    def _filter_table_by_date(self, delta: int = 0):
+    def _filter_by_delta_days(self, delta: int = 0) -> None:
         """
-
+        Filters the table data to include only rows within the past 'delta' number of days.
+        
+        The filter is applied by comparing the 'Date' column with the calculated start date, 
+        which is the current date minus the specified delta.
+        
+        Args:
+            delta (int): The number of days to filter by. Only rows with a 'Date' within the last 'delta' days are included.
         """
         if delta > 0:
+            # Get the current dataframe to filter
             current_df = self.get_current_df()
 
+            # Calculate the starting date based on the delta value
             starting_date = date.today() - timedelta(days=delta)
 
+            # Filter the dataframe by the calculated date range
             filtered_df = current_df[current_df['Date'] >= starting_date]
 
-            self.update_table(df = filtered_df)
+            # Update the table with the filtered data
+            self.update_table(df=filtered_df)
+
+    def _filter_by_date_window(self, start_date: date = date.today(), end_date: date = date.today()) -> None:
+        """
+        Filters the table data to include only rows within the specified date range.
+        
+        The filter is applied by comparing the 'Date' column with the specified start and end dates.
+        
+        Args:
+            start_date (date): The start date of the date range. Defaults to today's date.
+            end_date (date): The end date of the date range. Defaults to today's date.
+        """
+        # Get the current dataframe to filter
+        current_df = self.get_current_df()
+
+        # Apply the date range filter
+        filtered_df = current_df[(current_df['Date'] >= start_date) & (current_df['Date'] <= end_date)]
+
+        # Update the table with the filtered data
+        self.update_table(df=filtered_df)
 
     def _filter_numerical_entries(self, column):
         """
