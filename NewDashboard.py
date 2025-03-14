@@ -1030,7 +1030,7 @@ class DashboardUI(tk.Frame):
         
         # Initialize the image and button storage
         self.button_image_loc = os.path.join(os.path.dirname(__file__), "Images")
-        self.buttons = []
+        self.toolbar_buttons = []
         self.images = {}
         
         # Define button configurations
@@ -1066,7 +1066,7 @@ class DashboardUI(tk.Frame):
         for index, (text, icon, command) in enumerate(button_data):
             button = self._create_button(text, icon, command, btn_size)
             button.pack(side=tk.LEFT, padx=4, pady=2)
-            self.buttons.append(button)
+            self.toolbar_buttons.append(button)
             
             if index in [3, 7, 9, 10]:
                 self._create_separator()
@@ -1131,7 +1131,7 @@ class DashboardUI(tk.Frame):
                                 bg=StyleConfig.BUTTON_COLOR, 
                                 relief=StyleConfig.BUTTON_STYLE)
         search_button.pack(side=tk.LEFT, padx=5)
-        self.buttons.append(search_button)
+        self.toolbar_buttons.append(search_button)
         
         # Advanced search button
         adv_search_button = tk.Button(self.toolbar, 
@@ -1140,7 +1140,7 @@ class DashboardUI(tk.Frame):
                                     bg=StyleConfig.BUTTON_COLOR, 
                                     relief=StyleConfig.BUTTON_STYLE)
         adv_search_button.pack(side=tk.LEFT, padx=5)
-        self.buttons.append(adv_search_button)
+        self.toolbar_buttons.append(adv_search_button)
 
     ########################################################
     # MAIN WORKING PORTION OF WINDOW
@@ -1260,7 +1260,7 @@ class DashboardUI(tk.Frame):
                 foreground=[("selected", "#FFFFFF" if StyleConfig.DARK_MODE else "#000000")])
 
     def _apply_button_style(self):
-        for btn in self.buttons:
+        for btn in self.toolbar_buttons:
             btn.config(bg=StyleConfig.BUTTON_COLOR,
                     fg=StyleConfig.TEXT_COLOR,  
                     relief=StyleConfig.BUTTON_STYLE, 
@@ -1783,9 +1783,9 @@ class DashboardActions:
         """
         a = 5
 
-    ###########################
-    # Miscellaneous Functions #
-    ###########################
+    #########################
+    # Switch table displays #
+    #########################
     def switch_account_view(self, table_to_view: str) -> None:
         """
         Switches the view between 'Banking' and 'Investment' tables. 
@@ -1801,19 +1801,37 @@ class DashboardActions:
         # Switch to the new table
         self.main_dashboard.table_to_display = table_to_view
 
-        # Perform additional actions based on the new table, if needed
+        # Update the main tableview object
         self.update_table()
+
+        # Update the toolbar buttons
+        self.toggle_button_states()
         
 
 
     #####################
     # Toolbar functions #
     #####################
-    def toggle_button_states(self):
+    def toggle_button_states(self) -> None:
+        """
+        Toggles visibility of the toolbar buttons given the currently
+        displayed table.
+
+        Parameters:
+            show (bool): Which buttons to (de)activate
         """
 
-        """
-        a = 5
+        # Dictionary for table to DataFrame mapping
+        table_to_state = {
+            'Banking': [tk.NORMAL, tk.NORMAL, tk.DISABLED],
+            'Investments': [tk.DISABLED, tk.DISABLED, tk.NORMAL]
+        }
+
+        button_states = table_to_state.get(self.main_dashboard.table_to_display, None)
+
+        for state, button in enumerate([4, 5, 7]):
+            self.widget_dashboard.toolbar_buttons[button].config(state=button_states[state])
+
 
     ####################
     # Search Functions #
@@ -1928,7 +1946,6 @@ class Dashboard(tk.Frame):
         
         self.ui_manager = DashboardUI(parent_dashboard=self, master=self)
         self.ui_actions = DashboardActions(self, self.ui_manager)
-        #self.ui_actions.toggle_button_states(True)
         
         self.master.rowconfigure(0, weight=1)
         self.master.columnconfigure(0, weight=1)
@@ -1969,6 +1986,7 @@ class Dashboard(tk.Frame):
         self.all_banking_data = pd.DataFrame(columns=self.banking_column_widths)
         self.all_investment_data = pd.DataFrame(columns=self.investment_column_widths)
         self.table_to_display = 'Banking' # Or Investments
+        self.ui_actions.toggle_button_states()
 
         self.initial_balances = pd.DataFrame(columns=self.initial_balances_columns)
         self.current_balances = {}
