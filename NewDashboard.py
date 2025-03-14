@@ -1637,7 +1637,7 @@ class DashboardActions:
     ####################################
     # Update the main Tableview widget #
     ####################################
-    def update_table(self) -> None:
+    def update_table(self, df: pd.DataFrame = pd.DataFrame()) -> None:
         """
         Updates the main Tableview widget by configuring the table with the current data.
         
@@ -1654,7 +1654,8 @@ class DashboardActions:
         - Applies banded row styling for better visual organization.
         """
         # Get the current dataframe to display
-        df = self.get_current_df()
+        if df.empty:
+            df = self.get_current_df()
 
         # Retrieve column header widths and headers
         column_data = self.get_table_header_widths()  # Assuming this returns column widths as a dictionary
@@ -1756,23 +1757,91 @@ class DashboardActions:
     ###############################################
     # Filter the entries in main Tableview widget #
     ###############################################
-    def show_right_click_table_menu(self):
+    def show_right_click_table_menu(self, event=None):
+        """Shows the context menu based on the column clicked."""
+        # Get the column that was clicked
+
+        # Check if the click happened in the header region
+        region = self.widget_dashboard.tree.identify_region(event.x, event.y)
+
+        # If the region is not 'heading', do nothing (i.e., the click is on a cell)
+        if region != "heading":
+            return
+
+        col_id = self.widget_dashboard.tree.identify_column(event.x)
+        col_name = self.widget_dashboard.tree.heading(col_id, "text")
+        
+        menu = tk.Menu(self.main_dashboard, tearoff=0)
+
+        # Determine the menu options based on the column clicked
+        if col_name == 'Date':
+            self._add_date_filters(menu)
+
+        elif col_name == 'Description':
+            pass
+
+        elif col_name == 'Payee':
+            pass
+
+        elif col_name == 'Category':
+            pass
+    
+        elif col_name == 'Account':
+            pass
+
+        elif col_name == 'Action':
+            pass
+
+        elif col_name == 'Asset':
+            pass
+
+        elif col_name == 'Symbol':
+            pass
+
+        elif col_name in ['Payment', 'Deposit', 'Balance', 'Units']:
+            self._filter_numerical_entries(menu, col_name)
+
+        elif col_name == "Note":
+            pass
+
+        # Display the context menu at the mouse cursor position
+        menu.post(event.x_root, event.y_root)
+
+    def _add_date_filters(self, menu=tk.Menu) -> None:
+        """
+        
+        """
+        quick_add_dates = [30, 60, 90, 180, 365]
+
+        for date in quick_add_dates:
+            menu.add_command(label=f"Show last {date} days", command=lambda date=date: self._filter_table_by_date(delta=date))
+
+    def _add_calendar_window(self) -> None:
+        """
+        
+        """
+        self
+
+    def _filter_table_by_date(self, delta: int = 0):
         """
 
         """
-        a = 5
+        if delta > 0:
+            current_df = self.get_current_df()
 
-    def filter_entries(self):
+            starting_date = date.today() - timedelta(days=delta)
+
+            filtered_df = current_df[current_df['Date'] >= starting_date]
+
+            print (delta, starting_date)
+
+            self.update_table(df = filtered_df)
+
+    def _filter_numerical_entries(self, column):
         """
 
         """
-        a = 5
-
-    def filter_table_by_date(self):
-        """
-
-        """
-        a = 5
+        self
 
     ##############################
     # Calculate account balances #
@@ -1807,8 +1876,6 @@ class DashboardActions:
         # Update the toolbar buttons
         self.toggle_button_states()
         
-
-
     #####################
     # Toolbar functions #
     #####################
@@ -1832,27 +1899,28 @@ class DashboardActions:
         for state, button in enumerate([4, 5, 7]):
             self.widget_dashboard.toolbar_buttons[button].config(state=button_states[state])
 
-
     ####################
     # Search Functions #
     ####################
-    def search_data(self):
+    def search_entries(self) -> None:
         """
 
         """
-        a = 5
-        
+
+        self
+
     def search_transactions(self):
         """
 
         """
-        a = 5   
+        self 
 
     def open_advanced_search(self):
         """
 
         """
-        a = 5
+        #self.update_table(df = pd.DataFrame())
+        self
 
     #####################
     # Sidebar functions #
