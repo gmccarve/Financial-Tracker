@@ -1,3 +1,5 @@
+import pickle
+
 class StyleConfig:
     """Stores global UI settings such as font type, sizes, and colors."""
     
@@ -12,13 +14,14 @@ class StyleConfig:
     BUTTON_FONT_SIZE = 10
 
     # Colors
-    BG_COLOR = "#B0B0B0 "  # Background color
+    BG_COLOR = "#B0B0B0"  # Background color
     TEXT_COLOR = "#333333"  # Dark text color
     HEADER_COLOR = "#4a90e2"  # Header background
     BUTTON_COLOR = "#eaeaea"  # Button background
     BAND_COLOR_1 = "#e6f2ff"  # Alternating row color 1
     BAND_COLOR_2 = "#ffffff"  # Alternating row color 2
     ERROR_COLOR = "#ff4d4d"  # Error messages
+    SELECTION_COLOR = "#B0B0B0"
     
     # Row settings
     ROW_HEIGHT = 50
@@ -33,6 +36,9 @@ class StyleConfig:
     
     # Dark mode
     DARK_MODE = False  # Default to light mode
+
+    # Date format
+    DATE_FORMAT = "%Y-%m-%d"
     
     @classmethod
     def getDefaultSettings(cls):
@@ -87,6 +93,26 @@ class StyleConfig:
 
             cls.ORIGINAL_SETTINGS = {}  # Reset after restoring
     
-# Initialize StyleConfig attributes dynamically from defaults
-for key, value in StyleConfig.getDefaultSettings().items():
-    setattr(StyleConfig, key, value)
+    @classmethod
+    def loadUserSettings(cls, user_settings_file):
+        """
+        Loads user settings from a pickle file and updates the StyleConfig class.
+        
+        Parameters:
+            user_settings_file (str): Path to the pickle file containing user settings.
+        """
+        try:
+            with open(user_settings_file, "rb") as f:
+                user_settings = pickle.load(f)
+            
+            for key, value in user_settings.items():
+                if hasattr(cls, key):
+                    setattr(cls, key, value)  # Update StyleConfig attributes with the saved values
+                
+                if key == "DARK_MODE":
+                    cls.applyDarkMode(value)  # Apply dark mode if set
+
+        except (FileNotFoundError, pickle.UnpicklingError):
+            print("Error loading user settings. Using default settings.")
+            # If there's an error, use default settings
+            return

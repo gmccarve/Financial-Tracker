@@ -665,6 +665,7 @@ class Tables:
         """
         a = 5
 
+
 class DatePicker:
     def __init__(self, parent: tk.Frame, initial_date: date = None, multiple_dates: date = False):
         """
@@ -1001,6 +1002,353 @@ class DataSearch:
             height (int): The height of the window.
         """
         window.geometry(f"{width}x{height}+{self.parent.winfo_x()+250}+{self.parent.winfo_y()+250}")
+
+class ColorPicker:
+    def __init__(self, parent: tk.Tk | tk.Toplevel, var: tk.StringVar):
+        """
+        Initializes the ColorPicker class to handle the color picking functionality.
+        
+        Parameters:
+            parent (tk.Tk or tk.Toplevel): The parent window where the color picker will be displayed.
+            var (tk.StringVar): The Tkinter variable that holds the selected color.
+            entry_widget ( tk.Entry): The Entry widget that will display the selected color code.
+        """
+        self.parent = parent
+        self.var = var
+        self.selected_color = None
+
+    def open_color_picker(self):
+        """
+        Opens a color chooser dialog and updates the associated Tk variable with the chosen color.
+        """
+        # Ensure the color chooser window is on top of the current window
+        self.parent.lift()
+
+        # Open the color chooser dialog
+        color_code = colorchooser.askcolor(title="Choose a Color")[1]  # Get hex color code
+        if color_code:
+            self.selected_color = color_code  # Store the selected color in the class
+            self.var.set(color_code)  # Update the Tkinter variable with the selected color
+
+        # Return the selected color
+        return self.selected_color
+
+class Options:
+    def __init__(self, parent, main_dashboard, widget_dashboard):
+        """
+        Initializes the Options class to handle the application settings window.
+        
+        Parameters:
+            parent (tk.Tk): The main Tkinter window.
+            main_dashboard (MainDashboard): The main dashboard object that stores application-wide settings.
+            widget_dashboard (WidgetDashboard): The widget dashboard for UI updates.
+        """
+        self.parent = parent
+        self.main_dashboard = main_dashboard
+        self.widget_dashboard = widget_dashboard
+        self.temp_settings = {}
+        self.options_window = None
+
+    def open_options_window(self, new_settings: bool = True) -> None:
+        """
+        Opens a window to adjust various application settings such as fonts, colors, sizes, etc.
+
+        """
+        self.top = tk.Toplevel(self.main_dashboard)
+        self.top.title("Application Settings")
+        self.top.resizable(False, False)
+
+        #TODO Background color
+
+        # Header label for the window
+        tk.Label(
+                self.top,
+                text="Customize Appearance",
+                font=(StyleConfig.FONT_FAMILY, StyleConfig.HEADING_FONT_SIZE, "bold"),
+                bg=StyleConfig.BG_COLOR,
+                fg=StyleConfig.TEXT_COLOR
+        ).pack(pady=5)
+
+        # Initialize the temporary settings dictionary based on current values
+        self.temp_settings = {
+            "FONT_FAMILY":          [tk.StringVar(value=StyleConfig.FONT_FAMILY), sorted(list(font.families()))],
+            "FONT_SIZE":            [tk.IntVar(value=StyleConfig.FONT_SIZE), []],
+            "SUB_FONT_SIZE":        [tk.IntVar(value=StyleConfig.SUB_FONT_SIZE), []],
+            "HEADING_FONT_SIZE":    [tk.IntVar(value=StyleConfig.HEADING_FONT_SIZE), []],
+            "TITLE_FONT_SIZE":      [tk.IntVar(value=StyleConfig.TITLE_FONT_SIZE), []],
+            "BUTTON_FONT_SIZE":     [tk.IntVar(value=StyleConfig.BUTTON_FONT_SIZE), []],
+            "ROW_HEIGHT":           [tk.IntVar(value=StyleConfig.ROW_HEIGHT), []],
+            "TEXT_COLOR":           [tk.StringVar(value=StyleConfig.TEXT_COLOR), []],
+            "BG_COLOR":             [tk.StringVar(value=StyleConfig.BG_COLOR), []],
+            "HEADER_COLOR":         [tk.StringVar(value=StyleConfig.HEADER_COLOR), []],
+            "BUTTON_COLOR":         [tk.StringVar(value=StyleConfig.BUTTON_COLOR), []],
+            "BAND_COLOR_1":         [tk.StringVar(value=StyleConfig.BAND_COLOR_1), []],
+            "BAND_COLOR_2":         [tk.StringVar(value=StyleConfig.BAND_COLOR_2), []],
+            "ERROR_COLOR":          [tk.StringVar(value=StyleConfig.ERROR_COLOR), []],
+            "SELECTION_COLOR":      [tk.StringVar(value=StyleConfig.SELECTION_COLOR), []],
+            "SCROLL_SPEED":         [tk.IntVar(value=StyleConfig.SCROLL_SPEED), []],
+            "BUTTON_STYLE":         [tk.StringVar(value=StyleConfig.BUTTON_STYLE), ["flat", "groove", "sunken", "raised", "ridge"]],
+            "BUTTON_PADDING":       [tk.IntVar(value=StyleConfig.BUTTON_PADDING), []],
+            "BUTTON_BORDER_RADIUS": [tk.IntVar(value=StyleConfig.BUTTON_BORDER_RADIUS), []],
+            "DARK_MODE":            [tk.BooleanVar(value=StyleConfig.DARK_MODE), []],
+            "DATE_FORMAT":          [tk.StringVar(value=StyleConfig.DATE_FORMAT), ["%Y-%m-%d"]],
+        }
+
+        # Read in the user settings from the pickle file
+        try:
+            with open(self.main_dashboard.user_settings_file, "rb") as f:
+                user_settings = pickle.load(f)
+        except (FileNotFoundError, pickle.UnpicklingError):
+            # If there's an error loading the file (e.g., file not found or corrupted), use default settings
+            user_settings = {}
+
+        # Iterate over the settings and update the tk.Variable values with the user settings
+        for key, (var, options) in self.temp_settings.items():
+            # If the user setting exists in the pickle file, update the tk.Variable
+            if key in user_settings:
+                user_setting = user_settings[key]
+                var.set(user_setting)  # Update the Tk variable with the user setting
+
+        # Calculate window size based on the number of settings
+        window_height = len(self.temp_settings) * 31 + 120
+        window_width = 300
+        #TODO throw into separate class
+        self.open_relative_window(self.top, width=window_width, height=window_height)
+
+        # Create setting rows for each option
+        for label, (var, options) in self.temp_settings.items():
+            self.create_setting_row(label, var, options)
+
+        # Buttons to apply changes, reset to standard, or cancel
+        self.create_buttons()
+
+    def create_setting_row(self, label: str, var: tk.Variable, options: List = []) -> None:
+        """
+        Creates a single row (label + input widget) within the settings window.
+        
+        Parameters:
+            label (str): The label for the setting.
+            var (tk.Variable): The Tkinter variable holding the current setting value.
+            options (list[str], optional): If provided, it creates a dropdown (ComboBox).
+            is_color (bool, optional): If True, creates a color-chooser button next to the input widget.
+        """
+        frame = ttk.Frame(self.top)
+        frame.pack(fill="x", padx=10, pady=2)
+
+        formatted_text = ' '.join(label.split("_")).title() + ":"
+        formatted_text = formatted_text.replace("Bg", "Background")
+
+        tk.Label(frame, 
+                 text=formatted_text, 
+                 width=20, 
+                 font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE),
+                 bg=StyleConfig.BG_COLOR, 
+                 fg=StyleConfig.TEXT_COLOR,
+                 anchor='w'
+        ).pack(side=tk.LEFT)
+
+        if "color" in label.lower():
+            entry = ttk.Entry(frame, textvariable=var, width=10)
+            entry.pack(side=tk.LEFT, padx=5)
+
+            color_button = tk.Button(
+                frame,
+                text="🎨",
+                width=4,
+                command=lambda: self.open_color_picker(var, entry),
+                bg=StyleConfig.BUTTON_COLOR,
+                fg=StyleConfig.TEXT_COLOR,
+                relief=StyleConfig.BUTTON_STYLE
+            )
+            color_button.pack(side=tk.LEFT)
+
+        elif isinstance(var, tk.StringVar) and not options:
+            entry = ttk.Entry(frame, 
+                              textvariable=var, 
+                              width=30,
+                              command=lambda: self.apply_live_changes(),
+                              )
+            entry.pack(side=tk.RIGHT, fill="x", expand=True)
+
+        elif isinstance(var, tk.IntVar):
+            entry = ttk.Spinbox(frame, 
+                                textvariable=var, 
+                                from_=1, 
+                                to=30,
+                                width=30, 
+                                command=lambda: self.apply_live_changes(),
+                                )
+            entry.pack(side=tk.RIGHT, fill="x", expand=True)
+
+        elif isinstance(var, tk.BooleanVar):
+            var.set(StyleConfig.DARK_MODE)
+
+            checkbox = ttk.Checkbutton(frame, 
+                                       variable=var,
+                                       command=lambda: self.apply_live_changes(),
+                                       )
+            checkbox.pack(side=tk.RIGHT)
+
+        elif options:
+            dropdown = ttk.Combobox(frame, 
+                                    textvariable=var, 
+                                    values=options, 
+                                    state="readonly", 
+                                    width=15,
+                                    )
+            dropdown.pack(side=tk.RIGHT, fill="x", expand=True)
+            dropdown.bind("<<ComboboxSelected>>", lambda event: self.apply_live_changes())
+
+    def open_color_picker(self, var, entry_widget) -> None:
+        """
+        Opens the color picker dialog and updates the selected color.
+
+        Parameters:
+            var (tk.StringVar): The Tkinter StringVar associated with the color setting.
+            entry_widget (tk.Entry): The Entry widget to display the color code.
+        """
+        # Instantiate and open the ColorPicker
+        color_picker = ColorPicker(self.main_dashboard.master, var)
+        selected_color = color_picker.open_color_picker()  # Get selected color
+
+        # Optionally, do something with the selected color (e.g., update the widget)
+        if selected_color:
+            entry_widget.delete(0, tk.END)
+            entry_widget.insert(0, selected_color)
+
+            self.apply_live_changes()
+
+        self.open_options_window(new_settings=False)
+
+    def apply_live_changes(self) -> None:
+        """
+        
+        """
+        # Update the StyleConfig with the new values immediately
+        for key, (var, options) in self.temp_settings.items():
+            setattr(StyleConfig, key, var.get())
+
+        self.save_user_settings()
+        self.close_window()
+        self.open_options_window(new_settings=False)
+
+        # Apply changes in the widget dashboard
+        self.widget_dashboard.apply_style_changes()
+
+    def create_buttons(self) -> None:
+        """
+        Creates buttons for applying changes, resetting to standard settings, or canceling.
+        """
+        button_frame = ttk.Frame(self.top)
+        button_frame.pack(pady=10)
+
+        apply_button = tk.Button(
+            button_frame,
+            text="Apply",
+            command=self.apply_changes,
+            bg=StyleConfig.BUTTON_COLOR,
+            fg=StyleConfig.TEXT_COLOR,
+            relief=StyleConfig.BUTTON_STYLE
+        )
+        apply_button.grid(row=0, column=0, padx=5, pady=5)
+
+        standard_button = tk.Button(
+            button_frame,
+            text="Standard Options",
+            command=self.reset_to_standard,
+            bg=StyleConfig.BUTTON_COLOR,
+            fg=StyleConfig.TEXT_COLOR,
+            relief=StyleConfig.BUTTON_STYLE
+        )
+        standard_button.grid(row=1, column=0, columnspan=2, padx=5, pady=5)
+
+        cancel_button = tk.Button(
+            button_frame,
+            text="Cancel",
+            command=self.close_window,
+            bg=StyleConfig.BUTTON_COLOR,
+            fg=StyleConfig.TEXT_COLOR,
+            relief=StyleConfig.BUTTON_STYLE
+        )
+        cancel_button.grid(row=0, column=1, padx=5, pady=5)
+
+        # Bind Enter/Escape keys for convenience
+        self.top.bind("<Return>", self.apply_changes)
+        self.top.bind("<Escape>", lambda event: self.close_window(event))
+
+    def apply_changes(self) -> None:
+        """
+        Applies the changes made in the options window and saves them.
+        """
+        # Update the StyleConfig with the new values
+        for key, (var, options) in self.temp_settings.items():
+            setattr(StyleConfig, key, var.get())
+            print (key, var.get())
+
+        # Toggle Dark Mode if changed
+        StyleConfig.applyDarkMode(self.temp_settings["DARK_MODE"][0].get())
+
+        # Apply the changes in the widget dashboard
+        self.widget_dashboard.apply_style_changes()
+
+        # Save user settings to a file
+        self.save_user_settings()
+
+        # Close the options window
+        self.close_window()
+
+    def reset_to_standard(self) -> None:
+        """
+        Resets all style settings to their default values and saves them.
+        """
+        default_settings = StyleConfig.getDefaultSettings()
+
+        # Apply default settings dynamically
+        for key, value in default_settings.items():
+            setattr(StyleConfig, key, value)
+
+        # Apply the changes in the widget dashboard
+        self.widget_dashboard.apply_style_changes()
+
+        # Save user settings to a file
+        self.save_user_settings(data=default_settings)
+
+        # Close the options window
+        self.close_window()
+
+    def save_user_settings(self, data: dict = None) -> None:
+        """
+        Saves the current or default style settings to a pickle file.
+        
+        Parameters:
+            data (dict, optional): If provided, it saves the passed dictionary. If None, saves the current settings.
+        """
+        user_settings_path = self.main_dashboard.user_settings_file
+        if data is None:
+            with open(user_settings_path, "wb") as f:
+                pickle.dump({key: var.get() for key, (var, options) in self.temp_settings.items()}, f)
+        else:
+            with open(user_settings_path, "wb") as f:
+                pickle.dump({key: var for key, var in data.items()}, f)
+
+    def close_window(self, event=None) -> None:
+        """
+        Closes the options window.
+        """
+        if self.top:
+            self.top.destroy()
+
+    def open_relative_window(self, window: tk.Frame, width: int, height: int) -> None:
+        """
+        Opens a window relative to the main application window.
+
+        Parameters:
+            window (tk.Frame): The Toplevel window to open.
+            width (int): The width of the window.
+            height (int): The height of the window.
+        """
+        window.geometry(f"{width}x{height}+{self.parent.winfo_x()+250}+{self.parent.winfo_y()+250}")
+
 
 
 class Utility:
@@ -2245,43 +2593,63 @@ class DashboardActions:
         for state, button in enumerate([4, 5, 7]):
             self.widget_dashboard.toolbar_buttons[button].config(state=button_states[state])
 
-    #TODO
     ####################
     # Search Functions #
     ####################
     def simple_search(self) -> None:
         """
+        Filters the DataFrame based on the search value entered in the search text box.
+        This function performs a search for the entered value across all columns in the DataFrame.
+        If the search field is empty, it displays the original DataFrame.
 
+        It uses the `DataSearch` class to perform the actual search logic.
+
+        Returns:
+            None
         """
+        # Get the search value entered by the user, strip leading/trailing spaces, and convert to lowercase
         search_value = self.widget_dashboard.search_entry.get().strip().lower()
 
         if search_value:
+            # If there's a search value, get the current DataFrame to search through
             current_df = self.get_current_df()
 
-            search_value = self.widget_dashboard.search_entry.get().strip().lower()
-
+            # Initialize the search functionality with the current DataFrame
             search = DataSearch(self.main_dashboard.master, current_df)
+
+            # Perform the search and get the filtered DataFrame
             filtered_df = search.search_data(search_value=search_value)
 
+            # If filtered data is not empty, update the table with the filtered results
             if filtered_df is not None and not filtered_df.empty:
-                self.update_table(df = filtered_df)
+                self.update_table(df=filtered_df)
 
         else:
+            # If no search value is provided, simply display the original DataFrame (unfiltered)
             self.update_table()
 
-
-    def advanced_search(self):
+    def advanced_search(self) -> None:
         """
+        Filters the DataFrame based on column-specific criteria entered in the advanced search window.
+        This function opens an advanced search window where the user can specify search criteria for individual columns.
 
+        Once the search criteria are collected, the function applies the filtering to the DataFrame and updates the table.
+
+        Returns:
+            None
         """
+        # Get the current DataFrame to apply the advanced search
         current_df = self.get_current_df()
 
+        # Initialize the DataSearch class for advanced search
         search = DataSearch(self.main_dashboard.master, current_df)
-        search.search_data(advanced_criteria=True)
+
+        # Perform the advanced search, passing True for advanced criteria
         filtered_df = search.advanced_search()
 
+        # If the filtered DataFrame is not empty, update the table with the filtered results
         if filtered_df is not None and not filtered_df.empty:
-            self.update_table(df = filtered_df)
+            self.update_table(df=filtered_df)
 
     #TODO
     #####################
@@ -2355,7 +2723,10 @@ class DashboardActions:
         """
 
         """
-        a = 5
+        options = Options(self.main_dashboard.master,
+                          self.main_dashboard, 
+                          self.widget_dashboard)
+        options.open_options_window()
 
     #TODO
     ########################################################
@@ -2375,6 +2746,10 @@ class Dashboard(tk.Frame):
         super().__init__(master, *args, **kwargs)
         
         self.master = master  # Reference to the FinanceTracker (Main Window)
+
+        # Load user settings (this applies them to StyleConfig immediately)
+        self.user_settings_file = os.path.join(os.path.dirname(__file__), "user_settings.pkl")
+        StyleConfig.loadUserSettings(self.user_settings_file)
         
         self.ui_manager = DashboardUI(parent_dashboard=self, master=self)
         self.ui_actions = DashboardActions(self, self.ui_manager)
@@ -2426,8 +2801,6 @@ class Dashboard(tk.Frame):
 
         self.save_file_loc = os.path.join(os.path.dirname(__file__), "lastSavedFile.txt")
         self.save_file = self.read_save_file()
-        
-        self.user_settings_file = os.path.join(os.path.dirname(__file__), "user_settings.pkl")
         
         self.banking_categories_file  = os.path.join(os.path.dirname(__file__), "Banking_Categories.txt")
         self.investment_assets_file   = os.path.join(os.path.dirname(__file__), "Investments_Assets.txt")
