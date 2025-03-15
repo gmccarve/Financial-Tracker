@@ -39,6 +39,9 @@ class StyleConfig:
 
     # Date format
     DATE_FORMAT = "%Y-%m-%d"
+
+    # Live options updatings
+    LIVE_UPDATES = True
     
     @classmethod
     def getDefaultSettings(cls):
@@ -64,6 +67,7 @@ class StyleConfig:
             "BUTTON_PADDING":       5,
             "BUTTON_BORDER_RADIUS": 10,
             "DARK_MODE":            False,
+            "LIVE_UPDATES":         True,
             "DATE_FORMAT":          "%Y-%m-%d",
         }
     

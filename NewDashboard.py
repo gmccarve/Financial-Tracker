@@ -1056,9 +1056,10 @@ class Options:
         """
         self.top = tk.Toplevel(self.main_dashboard)
         self.top.title("Application Settings")
-        self.top.resizable(False, False)
+        self.top.configure(bg=StyleConfig.BG_COLOR) 
+        self.top.resizable(True, True)
 
-        #TODO Background color
+        #TODO Make sure only one window is open at a time
 
         # Header label for the window
         tk.Label(
@@ -1090,8 +1091,9 @@ class Options:
             "BUTTON_STYLE":         [tk.StringVar(value=StyleConfig.BUTTON_STYLE), ["flat", "groove", "sunken", "raised", "ridge"]],
             "BUTTON_PADDING":       [tk.IntVar(value=StyleConfig.BUTTON_PADDING), []],
             "BUTTON_BORDER_RADIUS": [tk.IntVar(value=StyleConfig.BUTTON_BORDER_RADIUS), []],
-            "DARK_MODE":            [tk.BooleanVar(value=StyleConfig.DARK_MODE), []],
             "DATE_FORMAT":          [tk.StringVar(value=StyleConfig.DATE_FORMAT), ["%Y-%m-%d"]],
+            "DARK_MODE":            [tk.BooleanVar(value=StyleConfig.DARK_MODE), []],
+            "LIVE_UPDATES":         [tk.BooleanVar(value=StyleConfig.LIVE_UPDATES), []],
         }
 
         # Read in the user settings from the pickle file
@@ -1109,18 +1111,18 @@ class Options:
                 user_setting = user_settings[key]
                 var.set(user_setting)  # Update the Tk variable with the user setting
 
-        # Calculate window size based on the number of settings
-        window_height = len(self.temp_settings) * 31 + 120
-        window_width = 300
-        #TODO throw into separate class
-        self.open_relative_window(self.top, width=window_width, height=window_height)
-
         # Create setting rows for each option
         for label, (var, options) in self.temp_settings.items():
             self.create_setting_row(label, var, options)
 
         # Buttons to apply changes, reset to standard, or cancel
         self.create_buttons()
+
+        # Calculate window size based on the number of settings
+        window_height = len(self.temp_settings) * 31 + 120
+        window_width = 400
+        #TODO throw into separate class
+        self.open_relative_window(self.top, width=window_width, height=window_height)
 
     def create_setting_row(self, label: str, var: tk.Variable, options: List = []) -> None:
         """
@@ -1132,7 +1134,10 @@ class Options:
             options (list[str], optional): If provided, it creates a dropdown (ComboBox).
             is_color (bool, optional): If True, creates a color-chooser button next to the input widget.
         """
-        frame = ttk.Frame(self.top)
+        frame = tk.Frame(
+                        self.top, 
+                        background=StyleConfig.BG_COLOR,
+                        )
         frame.pack(fill="x", padx=10, pady=2)
 
         formatted_text = ' '.join(label.split("_")).title() + ":"
@@ -1140,7 +1145,7 @@ class Options:
 
         tk.Label(frame, 
                  text=formatted_text, 
-                 width=20, 
+                 width=30, 
                  font=(StyleConfig.FONT_FAMILY, StyleConfig.FONT_SIZE),
                  bg=StyleConfig.BG_COLOR, 
                  fg=StyleConfig.TEXT_COLOR,
@@ -1148,7 +1153,13 @@ class Options:
         ).pack(side=tk.LEFT)
 
         if "color" in label.lower():
-            entry = ttk.Entry(frame, textvariable=var, width=10)
+            entry = tk.Entry(
+                                frame, 
+                                textvariable=var, 
+                                width=10, 
+                                background=StyleConfig.BG_COLOR,
+                                foreground=StyleConfig.TEXT_COLOR,
+                                )
             entry.pack(side=tk.LEFT, padx=5)
 
             color_button = tk.Button(
@@ -1163,39 +1174,57 @@ class Options:
             color_button.pack(side=tk.LEFT)
 
         elif isinstance(var, tk.StringVar) and not options:
-            entry = ttk.Entry(frame, 
-                              textvariable=var, 
-                              width=30,
-                              command=lambda: self.apply_live_changes(),
-                              )
+            entry = tk.Entry(
+                                frame, 
+                                textvariable=var, 
+                                width=30,
+                                command=lambda: self.apply_live_changes(),
+                                background=StyleConfig.BG_COLOR,
+                                foreground=StyleConfig.TEXT_COLOR,
+
+                              )         
             entry.pack(side=tk.RIGHT, fill="x", expand=True)
 
         elif isinstance(var, tk.IntVar):
-            entry = ttk.Spinbox(frame, 
+            entry = tk.Spinbox(
+                                frame, 
                                 textvariable=var, 
                                 from_=1, 
                                 to=30,
                                 width=30, 
                                 command=lambda: self.apply_live_changes(),
+                                background=StyleConfig.BG_COLOR,
+                                foreground=StyleConfig.TEXT_COLOR,
+                                buttonbackground=StyleConfig.BG_COLOR,
                                 )
             entry.pack(side=tk.RIGHT, fill="x", expand=True)
 
         elif isinstance(var, tk.BooleanVar):
-            var.set(StyleConfig.DARK_MODE)
+            var.set(var.get())
 
-            checkbox = ttk.Checkbutton(frame, 
-                                       variable=var,
-                                       command=lambda: self.apply_live_changes(),
+            checkbox = tk.Checkbutton(
+                                        frame, 
+                                        variable=var,
+                                        command=lambda: self.apply_live_changes(),
+                                        background=StyleConfig.BG_COLOR,
+                                        activeforeground=StyleConfig.TEXT_COLOR,
                                        )
             checkbox.pack(side=tk.RIGHT)
 
         elif options:
-            dropdown = ttk.Combobox(frame, 
+            combostyle = ttk.Style()
+
+            combostyle.configure('TCombobox', fieldbackground=StyleConfig.BG_COLOR)
+
+            dropdown = ttk.Combobox(
+                                    frame, 
                                     textvariable=var, 
                                     values=options, 
                                     state="readonly", 
-                                    width=15,
-                                    )
+                                    #background=StyleConfig.BG_COLOR,
+                                    #foreground=StyleConfig.TEXT_COLOR,
+                                    style='Tcombobox'
+                                    ) 
             dropdown.pack(side=tk.RIGHT, fill="x", expand=True)
             dropdown.bind("<<ComboboxSelected>>", lambda event: self.apply_live_changes())
 
@@ -1224,23 +1253,35 @@ class Options:
         """
         
         """
-        # Update the StyleConfig with the new values immediately
-        for key, (var, options) in self.temp_settings.items():
-            setattr(StyleConfig, key, var.get())
+        live_changes = self.temp_settings["LIVE_UPDATES"][0].get()
 
-        self.save_user_settings()
-        self.close_window()
-        self.open_options_window(new_settings=False)
+        if live_changes:
+            # Update the StyleConfig with the new values immediately
+            for key, (var, options) in self.temp_settings.items():
+                setattr(StyleConfig, key, var.get())
 
-        # Apply changes in the widget dashboard
-        self.widget_dashboard.apply_style_changes()
+            # Toggle Dark Mode if changed
+            StyleConfig.applyDarkMode(self.temp_settings["DARK_MODE"][0].get())
+
+            self.save_user_settings()
+            self.close_window()
+            self.open_options_window(new_settings=False)
+
+            # Apply changes in the widget dashboard
+            self.widget_dashboard.apply_style_changes()
 
     def create_buttons(self) -> None:
         """
         Creates buttons for applying changes, resetting to standard settings, or canceling.
         """
-        button_frame = ttk.Frame(self.top)
+        style = ttk.Style()
+        style.configure('new.TFrame', background=StyleConfig.BG_COLOR)
+        
+        button_frame = ttk.Frame(self.top, style='new.TFrame')
         button_frame.pack(pady=10)
+
+        style = ttk.Style()
+        style.configure('new.TFrame', background=StyleConfig.BG_COLOR)
 
         apply_button = tk.Button(
             button_frame,
@@ -1283,7 +1324,6 @@ class Options:
         # Update the StyleConfig with the new values
         for key, (var, options) in self.temp_settings.items():
             setattr(StyleConfig, key, var.get())
-            print (key, var.get())
 
         # Toggle Dark Mode if changed
         StyleConfig.applyDarkMode(self.temp_settings["DARK_MODE"][0].get())
@@ -1741,7 +1781,8 @@ class DashboardUI(tk.Frame):
         self.search_entry.bind("<Return>", lambda event: self.actions_manager.simple_search())
         
         # Search button
-        search_button = tk.Button(self.toolbar, 
+        search_button = tk.Button(
+                                self.toolbar, 
                                 text="Go",
                                 command=self.actions_manager.simple_search, 
                                 font=StyleConfig.FONT_FAMILY,
@@ -1751,7 +1792,8 @@ class DashboardUI(tk.Frame):
         self.toolbar_buttons.append(search_button)
         
         # Advanced search button
-        adv_search_button = tk.Button(self.toolbar, 
+        adv_search_button = tk.Button(
+                                    self.toolbar, 
                                     text="Advanced Search", 
                                     command=self.actions_manager.advanced_search,
                                     font=StyleConfig.FONT_FAMILY,
